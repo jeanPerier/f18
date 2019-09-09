@@ -395,7 +395,7 @@ void Op::Build(std::list<Op> &ops,
     const parser::Statement<parser::ActionStmt> &ec, AnalysisData &ad) {
   std::visit(
       common::visitors{
-          [&](const auto &s) { ops.emplace_back(ActionOp{ec}); },
+          [&](const auto &) { ops.emplace_back(ActionOp{ec}); },
           [&](const common::Indirection<parser::CallStmt> &s) {
             if (hasAltReturns(s.value())) {
               auto next{BuildNewLabel(ad)};

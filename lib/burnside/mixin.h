@@ -123,11 +123,6 @@ template<typename A, typename B> B &Unzip(B &out, A first, A last) {
   return out;
 }
 
-template<typename A, typename B> B &UnzipSnd(B &out, A first, A last) {
-  std::transform(first, last, std::back_inserter(out.second),
-      [](auto &&a) -> decltype(a.second) { return a.second; });
-  return out;
-}
-}
+} // namespace burnside
 
-#endif  // FORTRAN_BURNSIDE_COMMON_H_
+#endif  // FORTRAN_BURNSIDE_MIXIN_H_

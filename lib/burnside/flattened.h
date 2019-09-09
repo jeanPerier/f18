@@ -176,7 +176,7 @@ struct ActionOp {
       const parser::IfConstruct *, const parser::SelectRankConstruct *, \
       const parser::SelectTypeConstruct *, const parser::WhereConstruct *, \
       const parser::ForallConstruct *, const parser::CompilerDirective *, \
-    const parser::OpenMPConstruct * , const parser::OmpEndLoopDirective *
+      const parser::OpenMPConstruct *, const parser::OmpEndLoopDirective *
 
 // entry into a Fortran construct
 struct BeginOp : public SumTypeCopyMixin<CONSTRUCT_TYPES> {
@@ -236,7 +236,8 @@ LabelOp FetchLabel(AnalysisData &ad, const parser::Label &label);
 
 std::vector<LabelRef> GetAssign(
     AnalysisData &ad, const semantics::Symbol *symbol);
-}
+
+}  // namespace flat
 
 struct AnalysisData {
   std::map<parser::Label, flat::LabelOp> labelMap;
@@ -259,6 +260,7 @@ EXPLICIT_INSTANTIATION(SubroutineSubprogram);
 
 // dump flat IR
 void dump(const std::list<flat::Op> &ops);
-}
+
+}  // namespace burnside
 
 #endif  // FORTRAN_BURNSIDE_FLATTENED_H_
