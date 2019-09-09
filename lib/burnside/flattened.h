@@ -33,19 +33,6 @@ namespace flat {
 // the executable specification of the input program. The flattened IR can be
 // used to construct the Fortran IR.
 
-struct Op;
-struct LabelOp;
-struct GotoOp;
-struct ReturnOp;
-struct ConditionalGotoOp;
-struct SwitchIOOp;
-struct SwitchOp;
-struct ActionOp;
-struct BeginOp;
-struct EndOp;
-struct IndirectGotoOp;
-struct DoIncrementOp;
-struct DoCompareOp;
 
 using LabelRef = unsigned;
 constexpr LabelRef unspecifiedLabel{~0u};
@@ -62,7 +49,6 @@ struct LabelOp {
   bool isReferenced() const;
   LabelRef get() const { return label_; }
   operator LabelRef() const { return get(); }
-  void dump() const;
 
 private:
   LabelBuilder &builder_;
@@ -70,17 +56,16 @@ private:
 };
 
 struct ArtificialJump {};
-constexpr ArtificialJump ARTIFICIAL{};
 
 // a source of an absolute control flow edge
 struct GotoOp
   : public SumTypeCopyMixin<const parser::CycleStmt *, const parser::ExitStmt *,
         const parser::GotoStmt *, ArtificialJump> {
   template<typename A>
-  GotoOp(const A &stmt, LabelRef dest, const Location &source)
+  explicit GotoOp(const A &stmt, LabelRef dest, const Location &source)
     : SumTypeCopyMixin{&stmt}, target{dest}, source{source} {}
-  explicit GotoOp(LabelRef dest) : SumTypeCopyMixin{ARTIFICIAL}, target{dest} {}
-  void dump() const;
+  explicit GotoOp(LabelRef dest)
+    : SumTypeCopyMixin{ArtificialJump{}}, target{dest} {}
 
   LabelRef target;
   Location source;
@@ -90,9 +75,8 @@ struct GotoOp
 struct ReturnOp : public SumTypeCopyMixin<const parser::FailImageStmt *,
                       const parser::ReturnStmt *, const parser::StopStmt *> {
   template<typename A>
-  ReturnOp(const A &stmt, const Location &source)
+  explicit ReturnOp(const A &stmt, const Location &source)
     : SumTypeCopyMixin{&stmt}, source{source} {}
-  void dump() const;
 
   Location source;
 };
@@ -103,9 +87,8 @@ struct ConditionalGotoOp
         const parser::Statement<parser::ElseIfStmt> *, const parser::IfStmt *,
         const parser::Statement<parser::NonLabelDoStmt> *> {
   template<typename A>
-  ConditionalGotoOp(const A &cond, LabelRef tb, LabelRef fb)
+  explicit ConditionalGotoOp(const A &cond, LabelRef tb, LabelRef fb)
     : SumTypeCopyMixin{&cond}, trueLabel{tb}, falseLabel{fb} {}
-  void dump() const;
 
   LabelRef trueLabel;
   LabelRef falseLabel;
@@ -113,10 +96,9 @@ struct ConditionalGotoOp
 
 // multi-way branch based on a target-value of a variable
 struct IndirectGotoOp {
-  IndirectGotoOp(
+  explicit IndirectGotoOp(
       const semantics::Symbol *symbol, std::vector<LabelRef> &&labelRefs)
     : symbol{symbol}, labelRefs{labelRefs} {}
-  void dump() const;
 
   const semantics::Symbol *symbol;
   std::vector<LabelRef> labelRefs;
@@ -130,13 +112,12 @@ struct SwitchIOOp
         const parser::EndfileStmt *, const parser::RewindStmt *,
         const parser::FlushStmt *, const parser::InquireStmt *> {
   template<typename A>
-  SwitchIOOp(const A &io, LabelRef next, const Location &source,
+  explicit SwitchIOOp(const A &io, LabelRef next, const Location &source,
       std::optional<LabelRef> errLab,
       std::optional<LabelRef> eorLab = std::nullopt,
       std::optional<LabelRef> endLab = std::nullopt)
     : SumTypeCopyMixin{&io}, next{next}, source{source}, errLabel{errLab},
       eorLabel{eorLab}, endLabel{endLab} {}
-  void dump() const;
 
   LabelRef next;
   Location source;
@@ -152,10 +133,9 @@ struct SwitchOp
         const parser::CaseConstruct *, const parser::SelectRankConstruct *,
         const parser::SelectTypeConstruct *> {
   template<typename A>
-  SwitchOp(
+  explicit SwitchOp(
       const A &sw, const std::vector<LabelRef> &refs, const Location &source)
     : SumTypeCopyMixin{&sw}, refs{refs}, source{source} {}
-  void dump() const;
 
   const std::vector<LabelRef> refs;
   Location source;
@@ -163,8 +143,8 @@ struct SwitchOp
 
 // a compute step
 struct ActionOp {
-  ActionOp(const parser::Statement<parser::ActionStmt> &stmt) : v{&stmt} {}
-  void dump() const;
+  explicit ActionOp(const parser::Statement<parser::ActionStmt> &stmt)
+    : v{&stmt} {}
 
   const parser::Statement<parser::ActionStmt> *v;
 };
@@ -181,29 +161,25 @@ struct ActionOp {
 // entry into a Fortran construct
 struct BeginOp : public SumTypeCopyMixin<CONSTRUCT_TYPES> {
   SUM_TYPE_COPY_MIXIN(BeginOp)
-  void dump() const;
 
-  template<typename A> BeginOp(const A &c) : SumTypeCopyMixin{&c} {}
+  template<typename A> explicit BeginOp(const A &c) : SumTypeCopyMixin{&c} {}
 };
 
 // exit from a Fortran construct
 struct EndOp : public SumTypeCopyMixin<CONSTRUCT_TYPES> {
   SUM_TYPE_COPY_MIXIN(EndOp)
-  void dump() const;
 
-  template<typename A> EndOp(const A &c) : SumTypeCopyMixin{&c} {}
+  template<typename A> explicit EndOp(const A &c) : SumTypeCopyMixin{&c} {}
 };
 
 struct DoIncrementOp {
-  DoIncrementOp(const parser::DoConstruct &stmt) : v{&stmt} {}
-  void dump() const;
+  explicit DoIncrementOp(const parser::DoConstruct &stmt) : v{&stmt} {}
 
   const parser::DoConstruct *v;
 };
 
 struct DoCompareOp {
   DoCompareOp(const parser::DoConstruct &stmt) : v{&stmt} {}
-  void dump() const;
 
   const parser::DoConstruct *v;
 };
@@ -213,10 +189,6 @@ struct Op : public SumTypeMixin<LabelOp, GotoOp, ReturnOp, ConditionalGotoOp,
                 SwitchIOOp, SwitchOp, ActionOp, BeginOp, EndOp, IndirectGotoOp,
                 DoIncrementOp, DoCompareOp> {
   template<typename A> Op(const A &thing) : SumTypeMixin{thing} {}
-
-  void dump() const {
-    std::visit([](const auto &op) { op.dump(); }, u);
-  }
 
   static void Build(std::list<Op> &ops,
       const parser::Statement<parser::ActionStmt> &ec, AnalysisData &ad);
@@ -257,9 +229,6 @@ void CreateFlatIR(const A &ptree, std::list<flat::Op> &ops, AnalysisData &ad);
 EXPLICIT_INSTANTIATION(MainProgram);
 EXPLICIT_INSTANTIATION(FunctionSubprogram);
 EXPLICIT_INSTANTIATION(SubroutineSubprogram);
-
-// dump flat IR
-void dump(const std::list<flat::Op> &ops);
 
 }  // namespace burnside
 
