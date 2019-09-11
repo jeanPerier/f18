@@ -15,11 +15,15 @@
 #include "flattened.h"
 #include "../parser/parse-tree-visitor.h"
 #include "../semantics/symbol.h"
+#include <cstdint>
 
 namespace Fortran::burnside {
 namespace flat {
 
-LabelBuilder::LabelBuilder() : referenced(32), counter{0u} {}
+// Labels are numbered [0 .. `n`] consecutively. They are unsigned. Not all
+// labels are numbered. The unnumbered ones are given the value UINT_MAX. `n`
+// should never approach UINT_MAX.
+LabelBuilder::LabelBuilder() : referenced(32), counter{UINT_MAX} {}
 
 LabelRef LabelBuilder::getNext() {
   LabelRef next{counter++};
@@ -27,7 +31,7 @@ LabelRef LabelBuilder::getNext() {
   if (cap < counter) {
     referenced.reserve(2 * cap);
   }
-  referenced[next] = false;
+  referenced.resize(counter, false);
   return next;
 }
 
