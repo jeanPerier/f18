@@ -15,7 +15,6 @@
 #include "flattened.h"
 #include "../parser/parse-tree-visitor.h"
 #include "../semantics/symbol.h"
-#include <cstdint>
 
 namespace Fortran::burnside {
 namespace flat {
@@ -23,7 +22,7 @@ namespace flat {
 // Labels are numbered [0 .. `n`] consecutively. They are unsigned. Not all
 // labels are numbered. The unnumbered ones are given the value UINT_MAX. `n`
 // should never approach UINT_MAX.
-LabelBuilder::LabelBuilder() : referenced(32), counter{UINT_MAX} {}
+LabelBuilder::LabelBuilder() : referenced(32), counter{0u} {}
 
 LabelRef LabelBuilder::getNext() {
   LabelRef next{counter++};
@@ -35,9 +34,13 @@ LabelRef LabelBuilder::getNext() {
   return next;
 }
 
-void LabelBuilder::setReferenced(LabelRef label) { referenced[label] = true; }
+void LabelBuilder::setReferenced(LabelRef label) { 
+  CHECK(label < referenced.size());
+  referenced[label] = true; 
+}
 
 bool LabelBuilder::isReferenced(LabelRef label) const {
+  CHECK(label < referenced.size());
   return referenced[label];
 }
 
