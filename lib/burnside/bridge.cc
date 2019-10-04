@@ -812,7 +812,6 @@ void FIRConverter::genFIR(const Pa::LockStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::NullifyStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::OpenStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::PointerAssignmentStmt &stmt) {}
-void FIRConverter::genFIR(const Pa::PrintStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::ReadStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::RewindStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::SyncAllStmt &stmt) {}
@@ -826,6 +825,28 @@ void FIRConverter::genFIR(const Pa::WriteStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::ForallStmt &stmt) {}
 void FIRConverter::genFIR(AnalysisData &ad, const Pa::AssignStmt &stmt) {}
 void FIRConverter::genFIR(const Pa::PauseStmt &stmt) {}
+
+// Only handle simple one scalar real/integer print for now
+// The runtime i/o interface is a temp one, format is ignored
+void FIRConverter::genFIR(const Pa::PrintStmt &stmt) {
+  for (const Pa::OutputItem& item: std::get<std::list<Pa::OutputItem>>(stmt.t)) {
+    if (const Pa::Expr* parserExpr{std::get_if<Pa::Expr*>(item.u)}) {
+      auto loc{toLocation(parserExpr->source)};
+      M::Value* arg{createFIRExpr(loc, Se::GetExpr(*parserExpr))};
+      llvm::SmallVector<M::Type, 1> args{arg->getType()};
+      llvm::SmallVector<M::Type, 0> results{};
+      auto funcType{mlir::FunctionType::get(args, results, &mlirContext)};
+      mlir::FuncOp func{getNamedFunction(callee)}
+      if (!func) {
+        func = createFunction(getMod(), "print_float", funcTy);
+      }
+      llvm::SmallVector<M::Value *, 1> operands{arg};  // FAIL IMAGE has no args
+      build().create<M::CallOp>(toLocation(), func, operands);
+    } else {
+      TODO(); // implied do
+    }
+  }
+}
 
 /// translate action statements
 void FIRConverter::genFIR(AnalysisData &ad, const Fl::ActionOp &op) {
