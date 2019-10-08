@@ -1069,11 +1069,6 @@ std::unique_ptr<M::Pass> fir::createFIRToLLVMPass() {
   return std::make_unique<FIRToLLVMLoweringPass>();
 }
 
-// returns the predefined pass
-std::unique_ptr<M::Pass> fir::createStdToLLVMPass() {
-  return M::createLowerToLLVMPass();
-}
-
 std::unique_ptr<M::Pass> fir::createLLVMDialectToLLVMPass() {
   return std::make_unique<LLVMIRLoweringPass>();
 }
