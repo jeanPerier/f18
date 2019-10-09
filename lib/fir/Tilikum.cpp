@@ -318,6 +318,7 @@ struct BoxAddrOpConversion : public FIROpConversion<BoxAddrOp> {
   matchAndRewrite(M::Operation *op, OperandTy operands,
                   M::ConversionPatternRewriter &rewriter) const override {
     auto boxaddr = M::cast<BoxAddrOp>(op);
+    // FIXME: stub. needs a test, etc.
     rewriter.replaceOpWithNewOp<M::LLVM::GEPOp>(boxaddr, M::Type{}, operands);
     return matchSuccess();
   }
@@ -657,6 +658,7 @@ struct FieldIndexOpConversion : public FIROpConversion<fir::FieldIndexOp> {
   }
 };
 
+// Replace the fir-end op with a null
 struct FirEndOpConversion : public FIROpConversion<FirEndOp> {
   using FIROpConversion::FIROpConversion;
 
@@ -1014,6 +1016,7 @@ struct WhereOpConversion : public FIROpConversion<fir::WhereOp> {
   }
 };
 
+// Generate code for complex addition/subtraction
 template <typename LLVMOP, typename OPTY>
 M::LLVM::InsertValueOp complexSum(OPTY sumop,
                                   M::ConversionPatternRewriter &rewriter,
