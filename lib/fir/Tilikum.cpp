@@ -760,7 +760,7 @@ public:
         global.getContext());
     M::Attribute value;
     auto addrSpace = /* FIXME: hard-coded i32 here; is that ok? */
-        M::IntegerAttr::get(M::IntegerType::get(32, global.getContext()), 0);
+        rewriter.getI32IntegerAttr(0);
     rewriter.replaceOpWithNewOp<M::LLVM::GlobalOp>(global, tyAttr, isConst,
                                                    name, value, addrSpace);
     return matchSuccess();
@@ -1014,6 +1014,84 @@ struct WhereOpConversion : public FIROpConversion<fir::WhereOp> {
   }
 };
 
+template <typename LLVMOP, typename OPTY>
+M::LLVM::InsertValueOp complexSum(OPTY sumop,
+                                  M::ConversionPatternRewriter &rewriter,
+                                  FIRToLLVMTypeConverter &lowering) {
+  auto a = sumop.lhs();
+  auto b = sumop.rhs();
+  auto loc = sumop.getLoc();
+  auto ctx = sumop.getContext();
+  auto c0 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(0), ctx);
+  auto c1 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(1), ctx);
+  auto ty = lowering.convertType(sumop.getType());
+  auto x = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c0);
+  auto x_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c0);
+  auto rx = rewriter.create<LLVMOP>(loc, ty, x, x_);
+  auto y = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c1);
+  auto y_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c1);
+  auto ry = rewriter.create<LLVMOP>(loc, ty, y, y_);
+  auto r = rewriter.create<M::LLVM::UndefOp>(loc, ty);
+  auto r_ = rewriter.create<M::LLVM::InsertValueOp>(loc, ty, r, rx, c0);
+  return rewriter.create<M::LLVM::InsertValueOp>(loc, ty, r_, ry, c1);
+}
+
+struct AddcOpConversion : public FIROpConversion<fir::AddcOp> {
+  using FIROpConversion::FIROpConversion;
+
+  M::PatternMatchResult
+  matchAndRewrite(M::Operation *op, OperandTy operands,
+                  M::ConversionPatternRewriter &rewriter) const override {
+    // result: (x + x') + i(y + y')
+    auto addc = cast<fir::AddcOp>(op);
+    auto r = complexSum<M::LLVM::FAddOp>(addc, rewriter, lowering);
+    addc.replaceAllUsesWith(r.getResult());
+    rewriter.replaceOp(addc, r.getResult());
+    return matchSuccess();
+  }
+};
+
+struct SubcOpConversion : public FIROpConversion<fir::SubcOp> {
+  using FIROpConversion::FIROpConversion;
+
+  M::PatternMatchResult
+  matchAndRewrite(M::Operation *op, OperandTy operands,
+                  M::ConversionPatternRewriter &rewriter) const override {
+    // result: (x - x') + i(y - y')
+    auto subc = M::cast<fir::SubcOp>(op);
+    auto r = complexSum<M::LLVM::FSubOp>(subc, rewriter, lowering);
+    subc.replaceAllUsesWith(r.getResult());
+    rewriter.replaceOp(subc, r.getResult());
+    return matchSuccess();
+  }
+};
+
+struct MulcOpConversion : public FIROpConversion<fir::MulcOp> {
+  using FIROpConversion::FIROpConversion;
+
+  M::PatternMatchResult
+  matchAndRewrite(M::Operation *op, OperandTy operands,
+                  M::ConversionPatternRewriter &rewriter) const override {
+    auto mulc = M::cast<fir::MulcOp>(op);
+    // TODO: should this just call __muldc3 ?
+    assert(false && mulc);
+    return matchSuccess();
+  }
+};
+
+struct DivcOpConversion : public FIROpConversion<fir::DivcOp> {
+  using FIROpConversion::FIROpConversion;
+
+  M::PatternMatchResult
+  matchAndRewrite(M::Operation *op, OperandTy operands,
+                  M::ConversionPatternRewriter &rewriter) const override {
+    auto divc = M::cast<fir::DivcOp>(op);
+    // TODO: should this just call __divdc3 ?
+    assert(false && divc);
+    return matchSuccess();
+  }
+};
+
 // Lower a SELECT operation into a cascade of conditional branches. The last
 // case must be the `true` condition.
 inline void rewriteSelectConstruct(M::Operation *op, OperandTy operands,
@@ -1054,22 +1132,24 @@ public:
     FIRToLLVMTypeConverter typeConverter{&context};
     M::OwningRewritePatternList patterns;
     patterns.insert<
-        AddrOfOpConversion, AllocaOpConversion, AllocMemOpConversion,
-        BoxAddrOpConversion, BoxCharLenOpConversion, BoxDimsOpConversion,
-        BoxEleSizeOpConversion, BoxIsAllocOpConversion, BoxIsArrayOpConversion,
-        BoxIsPtrOpConversion, BoxProcHostOpConversion, BoxRankOpConversion,
-        BoxTypeDescOpConversion, CallOpConversion, ConvertOpConversion,
-        CoordinateOpConversion, DispatchOpConversion, DispatchTableOpConversion,
-        DTEntryOpConversion, EmboxCharOpConversion, EmboxOpConversion,
-        EmboxProcOpConversion, FirEndOpConversion, ExtractValueOpConversion,
-        FieldIndexOpConversion, FreeMemOpConversion, GenDimsOpConversion,
-        GenTypeDescOpConversion, GlobalEntryOpConversion, GlobalOpConversion,
-        ICallOpConversion, InsertValueOpConversion, LenParamIndexOpConversion,
-        LoadOpConversion, LoopOpConversion, NoReassocOpConversion,
+        AddcOpConversion, AddrOfOpConversion, AllocaOpConversion,
+        AllocMemOpConversion, BoxAddrOpConversion, BoxCharLenOpConversion,
+        BoxDimsOpConversion, BoxEleSizeOpConversion, BoxIsAllocOpConversion,
+        BoxIsArrayOpConversion, BoxIsPtrOpConversion, BoxProcHostOpConversion,
+        BoxRankOpConversion, BoxTypeDescOpConversion, CallOpConversion,
+        ConvertOpConversion, CoordinateOpConversion, DispatchOpConversion,
+        DispatchTableOpConversion, DivcOpConversion, DTEntryOpConversion,
+        EmboxCharOpConversion, EmboxOpConversion, EmboxProcOpConversion,
+        FirEndOpConversion, ExtractValueOpConversion, FieldIndexOpConversion,
+        FreeMemOpConversion, GenDimsOpConversion, GenTypeDescOpConversion,
+        GlobalEntryOpConversion, GlobalOpConversion, ICallOpConversion,
+        InsertValueOpConversion, LenParamIndexOpConversion, LoadOpConversion,
+        LoopOpConversion, MulcOpConversion, NoReassocOpConversion,
         SelectCaseOpConversion, SelectOpConversion, SelectRankOpConversion,
-        SelectTypeOpConversion, StoreOpConversion, UnboxCharOpConversion,
-        UnboxOpConversion, UnboxProcOpConversion, UndefOpConversion,
-        UnreachableOpConversion, WhereOpConversion>(&context, typeConverter);
+        SelectTypeOpConversion, StoreOpConversion, SubcOpConversion,
+        UnboxCharOpConversion, UnboxOpConversion, UnboxProcOpConversion,
+        UndefOpConversion, UnreachableOpConversion, WhereOpConversion>(
+        &context, typeConverter);
     M::populateStdToLLVMConversionPatterns(typeConverter, patterns);
     M::populateFuncOpTypeConversionPattern(patterns, &context, typeConverter);
     M::ConversionTarget target{context};
