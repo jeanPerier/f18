@@ -215,6 +215,7 @@ public:
     return LLVMTypeConverter::convertType(t);
   }
 
+  // cloned from LLVMTypeConverter since this is private there
   LLVM::LLVMType unwrap(Type type) {
     if (!type)
       return nullptr;
@@ -250,8 +251,8 @@ struct AddrOfOpConversion : public FIROpConversion<fir::AddrOfOp> {
   matchAndRewrite(M::Operation *op, OperandTy operands,
                   M::ConversionPatternRewriter &rewriter) const override {
     auto addr = M::cast<fir::AddrOfOp>(op);
-    // TODO
-    assert(false);
+    auto ty = lowering.convertType(addr.getType());
+    rewriter.replaceOpWithNewOp<M::LLVM::AddressOfOp>(addr, ty, operands, addr.getAttrs());
     return matchSuccess();
   }
 };
