@@ -232,6 +232,23 @@ public:
   }
 };
 
+L::SmallVector<M::NamedAttribute, 4>
+pruneNamedAttr(L::ArrayRef<M::NamedAttribute> attrs,
+               L::ArrayRef<L::StringRef> omitNames) {
+  L::SmallVector<M::NamedAttribute, 4> result;
+  for (auto x : attrs) {
+    bool omit = false;
+    for (auto o : omitNames)
+      if (x.first.strref() == o) {
+        omit = true;
+        break;
+      }
+    if (!omit)
+      result.push_back(x);
+  }
+  return result;
+}
+
 /// FIR conversion pattern template
 template <typename FromOp>
 class FIROpConversion : public M::ConversionPattern {
@@ -256,8 +273,9 @@ struct AddrOfOpConversion : public FIROpConversion<fir::AddrOfOp> {
                   M::ConversionPatternRewriter &rewriter) const override {
     auto addr = M::cast<fir::AddrOfOp>(op);
     auto ty = lowering.unwrap(lowering.convertType(addr.getType()));
+    auto attrs = pruneNamedAttr(addr.getAttrs(), {"symbol"});
     rewriter.replaceOpWithNewOp<M::LLVM::AddressOfOp>(addr, ty, addr.symbol(),
-                                                      addr.getAttrs());
+                                                      attrs);
     return matchSuccess();
   }
 };
