@@ -1077,7 +1077,29 @@ struct MulcOpConversion : public FIROpConversion<fir::MulcOp> {
                   M::ConversionPatternRewriter &rewriter) const override {
     auto mulc = M::cast<fir::MulcOp>(op);
     // TODO: should this just call __muldc3 ?
-    assert(false && mulc);
+    // result: (xx'-yy')+i(xy'+yx')
+    auto a = mulc.lhs();
+    auto b = mulc.rhs();
+    auto loc = mulc.getLoc();
+    auto ctx = mulc.getContext();
+    auto c0 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(0), ctx);
+    auto c1 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(1), ctx);
+    auto ty = lowering.convertType(mulc.getType());
+    auto x = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c0);
+    auto x_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c0);
+    auto xx_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, x, x_);
+    auto y = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c1);
+    auto yx_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, y, x_);
+    auto y_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c1);
+    auto xy_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, x, y_);
+    auto ri = rewriter.create<M::LLVM::FAddOp>(loc, ty, xy_, yx_);
+    auto yy_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, y, y_);
+    auto rr = rewriter.create<M::LLVM::FSubOp>(loc, ty, xx_, yy_);
+    auto ra = rewriter.create<M::LLVM::UndefOp>(loc, ty);
+    auto r_ = rewriter.create<M::LLVM::InsertValueOp>(loc, ty, ra, rr, c0);
+    auto r = rewriter.create<M::LLVM::InsertValueOp>(loc, ty, r_, ri, c1);
+    mulc.replaceAllUsesWith(r.getResult());
+    rewriter.replaceOp(mulc, r.getResult());
     return matchSuccess();
   }
 };
@@ -1090,7 +1112,34 @@ struct DivcOpConversion : public FIROpConversion<fir::DivcOp> {
                   M::ConversionPatternRewriter &rewriter) const override {
     auto divc = M::cast<fir::DivcOp>(op);
     // TODO: should this just call __divdc3 ?
-    assert(false && divc);
+    // result: ((xx'+yy')/d) + i((yx'-xy')/d) where d = x'x' + y'y'
+    auto a = divc.lhs();
+    auto b = divc.rhs();
+    auto loc = divc.getLoc();
+    auto ctx = divc.getContext();
+    auto c0 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(0), ctx);
+    auto c1 = M::ArrayAttr::get(rewriter.getI32IntegerAttr(1), ctx);
+    auto ty = lowering.convertType(divc.getType());
+    auto x = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c0);
+    auto x_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c0);
+    auto xx_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, x, x_);
+    auto x_x_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, x_, x_);
+    auto y = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, a, c1);
+    auto yx_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, y, x_);
+    auto y_ = rewriter.create<M::LLVM::ExtractValueOp>(loc, ty, b, c1);
+    auto xy_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, x, y_);
+    auto yy_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, y, y_);
+    auto y_y_ = rewriter.create<M::LLVM::FMulOp>(loc, ty, y_, y_);
+    auto d = rewriter.create<M::LLVM::FAddOp>(loc, ty, x_x_, y_y_);
+    auto rrn = rewriter.create<M::LLVM::FAddOp>(loc, ty, xx_, yy_);
+    auto rin = rewriter.create<M::LLVM::FSubOp>(loc, ty, yx_, xy_);
+    auto rr = rewriter.create<M::LLVM::FDivOp>(loc, ty, rrn, d);
+    auto ri = rewriter.create<M::LLVM::FDivOp>(loc, ty, rin, d);
+    auto ra = rewriter.create<M::LLVM::UndefOp>(loc, ty);
+    auto r_ = rewriter.create<M::LLVM::InsertValueOp>(loc, ty, ra, rr, c0);
+    auto r = rewriter.create<M::LLVM::InsertValueOp>(loc, ty, r_, ri, c1);
+    divc.replaceAllUsesWith(r.getResult());
+    rewriter.replaceOp(divc, r.getResult());
     return matchSuccess();
   }
 };
