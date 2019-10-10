@@ -34,7 +34,7 @@ class IntrinsicLibrary {
 public:
   /// Available intrinsic library versions.
   enum class Version { PgmathFast, PgmathRelaxed, PgmathPrecise, LLVM };
-  using Key = std::pair<llvm::StringRef, mlir::Type>;
+  using Key = llvm::StringRef;
   // Need a custom hash for this kind of keys. LLVM provides it.
   struct Hash {
     size_t operator()(const Key &k) const { return llvm::hash_value(k); }
@@ -43,20 +43,21 @@ public:
   /// is not declared in mlir until the IntrinsicLibrary needs to return it.
   /// This is to avoid polluting the LLVM IR with useless declarations.
   /// This structure allows generating mlir::FuncOp on the fly.
-  struct IntrinsicImplementation {
-    IntrinsicImplementation(llvm::StringRef n, mlir::FunctionType t)
+  struct RuntimeFunction {
+    RuntimeFunction(llvm::StringRef n, mlir::FunctionType t)
       : symbol{n}, type{t} {};
     llvm::StringRef symbol;
     mlir::FunctionType type;
   };
-  using Map = std::unordered_map<Key, IntrinsicImplementation, Hash>;
+  using Map = std::unordered_multimap<Key, RuntimeFunction, Hash>;
 
   /// Probe the intrinsic library for a certain intrinsic and get/build the
   /// related mlir::FuncOp if a runtime description is found.
   /// Also add an unit attribute "fir.intrinsic" to the function so that later
   /// it is possible to quickly know what function are intrinsics vs users.
   std::optional<mlir::FuncOp> getFunction(
-      llvm::StringRef, mlir::Type, mlir::OpBuilder &) const;
+      llvm::StringRef, mlir::FunctionType, mlir::OpBuilder &) const;
+mlir::Value* LowerIntrinsic(llvm::StringRef name, mlir::Type resultType, llvm::ArrayRef<mlir::Value*> args, mlir::OpBuilder &builder) const;
 
   /// Create the runtime description for the targeted library version.
   static IntrinsicLibrary create(Version, mlir::MLIRContext &);
