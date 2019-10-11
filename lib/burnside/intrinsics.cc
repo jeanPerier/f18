@@ -38,7 +38,7 @@ static const RuntimeStaticDescription llvm[] = {
     {"abs", "llvm.fabs.f32", Type::f32, {Type::f32}},
     {"abs", "llvm.fabs.f64", Type::f64, {Type::f64}},
     {"acos", "acosf", Type::f32, {Type::f32}},
-    {"acos", "acos", Type::f64, {Type::f64}},
+//    {"acos", "acos", Type::f64, {Type::f64}},
     {"atan", "atan2f", Type::f32, {Type::f32, Type::f32}},
     {"atan", "atan2", Type::f64, {Type::f64, Type::f64}},
     {"sqrt", "llvm.sqrt.f32", Type::f32, {Type::f32}},
@@ -104,10 +104,11 @@ mlir::Value* OutlineInWrapper(mlir::OpBuilder& builder, const IntrinsicLibrary& 
     mlir::MLIRContext* context{module.getContext()};
     auto loc{mlir::UnknownLoc::get(context)};
     // Only if injecting code in a wrapper function
+    auto funcType{getFunctionType(resultType, arguments, context)};
     std::string wrapperName{"fir."+name.str()+"."+typeToString(resultType).str()};
     mlir::FuncOp function{getNamedFunction(module, wrapperName)};
     if (!function) {
-      auto funcType{getFunctionType(resultType, arguments, context)};
+      // First time this wrapper is needed, build it.
       function = createFunction(module, wrapperName, funcType);
       function.setAttr("fir.intrinsic", builder.getUnitAttr());
       function.addEntryBlock();
@@ -119,8 +120,10 @@ mlir::Value* OutlineInWrapper(mlir::OpBuilder& builder, const IntrinsicLibrary& 
       }
       auto result{codeGen(*localBuilder, library, resultType, localArguments, name)};
       localBuilder->create<mlir::ReturnOp>(loc, result);
+    } else {
+      // Wrapper was already built, ensure it has the sought type
+      assert(function.getType() == funcType);
     }
-    // Wrapper function stuff again
     auto call{builder.create<mlir::CallOp>(loc, function, arguments)};
     return call.getResult(0);
 }
@@ -132,11 +135,11 @@ mlir::Value* LowerToRuntime(mlir::OpBuilder& builder, const IntrinsicLibrary& li
     auto loc{mlir::UnknownLoc::get(context)};
 
     // Look up runtime
-    mlir::FunctionType seekedFuncType{getFunctionType(resultType, arguments, context)};
-    if (auto funcOp{library.getFunction(name, seekedFuncType, builder)}) {
+    mlir::FunctionType soughtFuncType{getFunctionType(resultType, arguments, context)};
+    if (auto funcOp{library.getFunction(name, soughtFuncType, builder)}) {
       mlir::FunctionType actualFuncType{funcOp->getType()};
-      if (actualFuncType.getNumResults() != seekedFuncType.getNumResults() ||
-          actualFuncType.getNumInputs() != seekedFuncType.getNumInputs() ||
+      if (actualFuncType.getNumResults() != soughtFuncType.getNumResults() ||
+          actualFuncType.getNumInputs() != soughtFuncType.getNumInputs() ||
           actualFuncType.getNumInputs() != arguments.size() ||
           actualFuncType.getNumResults() != 1) {
         assert(false); //TODO return optional
@@ -145,7 +148,7 @@ mlir::Value* LowerToRuntime(mlir::OpBuilder& builder, const IntrinsicLibrary& li
       int i{0};
       for (mlir::Value* arg : arguments) {
         mlir::Type actualType{actualFuncType.getInput(i)};
-        if (seekedFuncType.getInput(i) != actualType) {
+        if (soughtFuncType.getInput(i) != actualType) {
           auto castedArg{builder.create<fir::ConvertOp>(loc, actualType, arg)};
           convertedArguments.push_back(castedArg.getResult());
         } else {
@@ -153,10 +156,10 @@ mlir::Value* LowerToRuntime(mlir::OpBuilder& builder, const IntrinsicLibrary& li
         }
       }
       auto call{builder.create<mlir::CallOp>(loc, *funcOp, convertedArguments)};
-      mlir::Type seekedType{seekedFuncType.getResult(0)};
+      mlir::Type soughtType{soughtFuncType.getResult(0)};
       mlir::Value* res{call.getResult(0)};
-      if (actualFuncType.getResult(0) != seekedType) {
-        auto castedRes{builder.create<fir::ConvertOp>(loc, seekedType, res)};
+      if (actualFuncType.getResult(0) != soughtType) {
+        auto castedRes{builder.create<fir::ConvertOp>(loc, soughtType, res)};
         return castedRes.getResult();
       } else {
         return res;
@@ -203,7 +206,6 @@ mlir::FuncOp getFuncOp(mlir::OpBuilder& builder, const IntrinsicLibrary::Runtime
   return function;
 }
 
-// TODO allow near-match with conversions
 std::optional<mlir::FuncOp> IntrinsicLibrary::getFunction(
     llvm::StringRef name, mlir::FunctionType funcType, mlir::OpBuilder &builder) const {
   auto range{lib.equal_range(name)};
@@ -211,12 +213,16 @@ std::optional<mlir::FuncOp> IntrinsicLibrary::getFunction(
   for (auto iter{range.first}; iter != range.second; ++iter ) {
     const RuntimeFunction& impl{iter->second};
     if (funcType == impl.type) {
-      return getFuncOp(builder, impl);
+      return getFuncOp(builder, impl); // exact match
     } else {
-      if (!bestNearMatch) {
+      if (!bestNearMatch && impl.type.getNumResults() == funcType.getNumResults()
+          && impl.type.getNumInputs() == funcType.getNumInputs()) {
         bestNearMatch = &impl;
       } else {
-        // TODO
+        // TODO the best near match should not be the first hit.
+        // It should apply rules:
+        //  -> Non narrowing argument conversion are better
+        //  -> The "nearest" conversions are better
       }
     }
   }
@@ -238,4 +244,161 @@ IntrinsicLibrary IntrinsicLibrary::create(
   }
   return IntrinsicLibrary{std::move(map)};
 }
+
+
+////////////////////// Refactored
+
+class MathRuntimeLibrary {
+public:
+  using Key = llvm::StringRef;
+  struct Hash { // Need custom hash for this kind of key
+    size_t operator()(const Key &k) const { return llvm::hash_value(k); }
+  };
+  struct RuntimeFunction {
+    RuntimeFunction(llvm::StringRef n, mlir::FunctionType t)
+      : symbol{n}, type{t} {};
+    llvm::StringRef symbol;
+    mlir::FunctionType type;
+  };
+  using Map = std::unordered_multimap<Key, RuntimeFunction, Hash>;
+
+  MathRuntimeLibrary(IntrinsicLibraryNew::Version, mlir::MLIRContext&);
+  /// Probe the intrinsic library for a certain intrinsic and get/build the
+  /// related mlir::FuncOp if a runtime description is found.
+  /// Also add an unit attribute "fir.intrinsic" to the function so that later
+  /// it is possible to quickly know what function are intrinsics vs users.
+  //  TODO put builder first in signature
+  std::optional<mlir::FuncOp> getFunction(
+      llvm::StringRef, mlir::FunctionType, mlir::OpBuilder &) const;
+
+  /// Create the runtime description for the targeted library version.
+
+private:
+  mlir::FuncOp getFuncOp(mlir::OpBuilder& builder, const RuntimeFunction& runtime) const;
+  Map library;
+};
+
+class IntrinsicGeneratorContext {
+public:
+  using Generator = mlir::Value* (IntrinsicGeneratorContext::*)();
+  mlir::Value* defaultGenerator(){return outlineInWrapper(&I::mapToRuntime); }
+  template<Generator g> mlir::Value* outline() { return outlineInWrapper(g); }
+  mlir::Value* mapToRuntime() {return nullptr;};
+  
+private:
+  struct IntrinsicHanlder {
+    const char *name;
+    Generator generator{&I::defaultGenerator};
+  };
+  using I = IntrinsicGeneratorContext;
+  // Table that drives the fir generation depending on the intrinsic.
+  // The default is to attempt to replace by a runtime call with
+  // one to one mapping with Fortran arguments. Type cast are
+  // inserted if no runtime function with the sought type is available.
+  static constexpr IntrinsicHanlder handlers[] {
+    {"abs", &I::defaultGenerator},
+    {"acos", &I::defaultGenerator},
+    {"atan", &I::defaultGenerator},
+    {"sqrt", &I::defaultGenerator},
+    {"cos", &I::defaultGenerator},
+    {"sin", &I::defaultGenerator},
+  };
+  // helpers
+  std::string getWrapperName();
+  mlir::Value* outlineInWrapper(Generator);
+
+  // Info required by all the Generators
+  mlir::Location loc;
+  mlir::OpBuilder& builder;
+  llvm::StringRef name;
+  mlir::Type resultType;
+  llvm::ArrayRef<mlir::Value*> arguments;
+  mlir::FunctionType funcType;
+  MathRuntimeLibrary& runtime;
+};
+
+class IntrinsicLibraryNew::Implementation {
+public:
+  Implementation(Version v, mlir::MLIRContext& c): runtime{v, c} {}
+  inline mlir::Value* genval(mlir::Location loc, mlir::OpBuilder &builder, llvm::StringRef name, mlir::Type resultType, llvm::ArrayRef<mlir::Value*> args);
+private:
+  MathRuntimeLibrary runtime;
+};
+
+// IntrinsicLibraryNew implementation
+
+IntrinsicLibraryNew IntrinsicLibraryNew::create(IntrinsicLibraryNew::Version v, mlir::MLIRContext& context) {
+  IntrinsicLibraryNew lib{};
+  lib.impl = new Implementation(v, context);
+  return lib;
+}
+
+IntrinsicLibraryNew::~IntrinsicLibraryNew() { delete impl; }
+
+mlir::Value* IntrinsicLibraryNew::genval(mlir::Location loc, mlir::OpBuilder &builder, llvm::StringRef name, mlir::Type resultType, llvm::ArrayRef<mlir::Value*> args) {
+  assert(impl);
+  return impl->genval(loc, builder, name, resultType, args);
+}
+
+// Implementation implementation
+//
+mlir::Value* IntrinsicLibraryNew::Implementation::genval(mlir::Location loc, mlir::OpBuilder &builder, llvm::StringRef name, mlir::Type resultType, llvm::ArrayRef<mlir::Value*> args) {
+  // TODO
+  return nullptr;
+}
+  
+// MathRuntimeLibrary implementation
+
+MathRuntimeLibrary::MathRuntimeLibrary(IntrinsicLibraryNew::Version, mlir::MLIRContext& context) {
+  for (const auto &func : runtime::llvm) {
+    Key key{func.name};
+    RuntimeFunction impl{func.symbol, runtime::toMLIRFunctionType(func, context)};
+    library.insert({key, impl});
+  }
+}
+
+mlir::FuncOp MathRuntimeLibrary::getFuncOp(mlir::OpBuilder& builder, const RuntimeFunction& runtime) const {
+  auto module{getModule(&builder)};
+  mlir::FuncOp function{getNamedFunction(module, runtime.symbol)};
+  if (!function) {
+    function = createFunction(module, runtime.symbol, runtime.type);
+    function.setAttr("fir.runtime", builder.getUnitAttr());
+  }
+  return function;
+}
+
+std::optional<mlir::FuncOp> MathRuntimeLibrary::getFunction(
+    llvm::StringRef name, mlir::FunctionType funcType, mlir::OpBuilder &builder) const {
+  auto range{library.equal_range(name)};
+  const RuntimeFunction* bestNearMatch{nullptr};
+  for (auto iter{range.first}; iter != range.second; ++iter ) {
+    const RuntimeFunction& impl{iter->second};
+    if (funcType == impl.type) {
+      return getFuncOp(builder, impl); // exact match
+    } else {
+      if (!bestNearMatch && impl.type.getNumResults() == funcType.getNumResults()
+          && impl.type.getNumInputs() == funcType.getNumInputs()) {
+        bestNearMatch = &impl;
+      } else {
+        // TODO the best near match should not be the first hit.
+        // It should apply rules:
+        //  -> Non narrowing argument conversion are better
+        //  -> The "nearest" conversions are better
+      }
+    }
+  }
+  if (bestNearMatch != nullptr) {
+    return getFuncOp(builder, *bestNearMatch);
+  } else {
+    return std::nullopt;
+  }
+}
+
+
+//
+//
+//
+//
+//
+
 }

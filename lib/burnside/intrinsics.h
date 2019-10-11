@@ -68,6 +68,22 @@ private:
   Map lib;
 };
 
+class IntrinsicLibraryNew {
+public:
+  /// Available runtime library versions.
+  enum class Version { PgmathFast, PgmathRelaxed, PgmathPrecise, LLVM };
+
+  ~IntrinsicLibraryNew();
+  mlir::Value* genval(mlir::Location loc, mlir::OpBuilder &builder, llvm::StringRef name, mlir::Type resultType, llvm::ArrayRef<mlir::Value*> args);
+
+  /// Create the runtime description for the targeted library version.
+  static IntrinsicLibraryNew create(Version, mlir::MLIRContext &);
+private:
+  /// Actual implementation is hidden
+  class Implementation;
+  Implementation* impl{nullptr}; // owning pointer
+};
+
 }
 
 #endif  // FORTRAN_BURNSIDE_INTRINSICS_H_
