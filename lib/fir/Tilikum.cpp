@@ -467,7 +467,7 @@ struct ConvertOpConversion : public FIROpConversion<ConvertOp> {
     auto loc = op->getLoc();
     M::Value *op0 = operands[0];
     auto *fromLLVMTy = fromTy.cast<M::LLVM::LLVMType>().getUnderlyingType();
-    auto *toLLVMTy = fromTy.cast<M::LLVM::LLVMType>().getUnderlyingType();
+    auto *toLLVMTy = toTy.cast<M::LLVM::LLVMType>().getUnderlyingType();
     M::Value *v = nullptr;
     if (fromLLVMTy == toLLVMTy) {
       rewriter.replaceOp(op, op0);
@@ -477,14 +477,17 @@ struct ConvertOpConversion : public FIROpConversion<ConvertOp> {
       if (toLLVMTy->isIntegerTy()) {
         v = rewriter.create<M::LLVM::FPToSIOp>(loc, toTy, op0);
       } else if (toLLVMTy->isFloatingPointTy()) {
-        unsigned fromBits = fromLLVMTy->getIntegerBitWidth();
-        unsigned toBits = toLLVMTy->getIntegerBitWidth();
+        unsigned fromBits = fromLLVMTy->getPrimitiveSizeInBits();
+        unsigned toBits = toLLVMTy->getPrimitiveSizeInBits();
         assert(fromBits != toBits);
         if (fromBits > toBits)
           v = rewriter.create<M::LLVM::FPTruncOp>(loc, toTy, op0);
         else
           v = rewriter.create<M::LLVM::FPExtOp>(loc, toTy, op0);
       }
+      // FIXME JP Hack do not push
+      rewriter.replaceOp(op, v);
+      return matchSuccess();
     } else if (fromLLVMTy->isIntegerTy()) {
       if (toLLVMTy->isIntegerTy()) {
         unsigned fromBits = fromLLVMTy->getIntegerBitWidth();
