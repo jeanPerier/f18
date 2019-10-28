@@ -14,19 +14,21 @@
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-string-conversion")
 
-add_executable(fml
-  fml.cc
+add_executable(bbc
+  bbc.cc
 )
 
 set(LIBS
+  FIR
+  FIRTransforms
   MLIRAffineOps
   MLIRLLVMIR
   MLIRLoopOps
   MLIRStandardOps
 )
 
-whole_archive_link(fml ${LIBS})
-target_link_libraries(fml
+whole_archive_link(bbc ${LIBS})
+target_link_libraries(bbc
   FortranCommon
   FortranParser
   FortranEvaluate
@@ -36,4 +38,4 @@ target_link_libraries(fml
   ${LIBS}
 )
 
-install(TARGETS fml DESTINATION bin)
+install(TARGETS bbc DESTINATION bin)
