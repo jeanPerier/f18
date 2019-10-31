@@ -478,15 +478,21 @@ static mlir::Value *createCompare(mlir::Location loc, mlir::OpBuilder &builder,
           ? mlir::CmpIPredicate::SGT
           : mlir::CmpIPredicate::SLT};
   static constexpr auto realPredicate{extremum == Extremum::Max
-          ? mlir::CmpFPredicate::UGT
-          : mlir::CmpFPredicate::ULT};
+          ? fir::CmpFPredicate::UGT
+          : fir::CmpFPredicate::ULT};
   auto type{left->getType()};
   if (type.isa<mlir::FloatType>() || type.isa<fir::RealType>()) {
-    return builder.create<mlir::CmpFOp>(loc, realPredicate, left, right);
+    // TODO which logical kind ?
+    auto resTy{fir::LogicalType::get(getModule(&builder).getContext(), 4)};
+    // TODO: The type we get from CmpfOp is a bit weird (it is the operands
+    // types, and not a boolean).
+    return builder.create<fir::CmpfOp>(loc, realPredicate, left, right);
   } else if (type.isa<mlir::IntegerType>()) {
     return builder.create<mlir::CmpIOp>(loc, integerPredicate, left, right);
   } else if (type.isa<fir::CharacterType>()) {
-    // TODO
+    // TODO: ! character min and max is tricky because the result
+    // length is the length of the longest argument!
+    // So we may need a temp.
   }
   assert(false);
   return nullptr;
