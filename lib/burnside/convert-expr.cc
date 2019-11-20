@@ -117,12 +117,10 @@ class ExprLowering {
   }
 
   /// Generate a logical/boolean constant of `value`
-  M::Type getMLIRlogicalType() {
-    return M::IntegerType::get(1, builder.getContext());
-  }
   M::Value *genMLIRLogicalConstant(M::MLIRContext *context, bool value) {
-    auto attr{builder.getIntegerAttr(getMLIRlogicalType(), value ? 1 : 0)};
-    return builder.create<M::ConstantOp>(getLoc(), getMLIRlogicalType(), attr)
+    M::Type mlirLogicalType{getMLIRlogicalType(builder.getContext())};
+    auto attr{builder.getIntegerAttr(mlirLogicalType, value ? 1 : 0)};
+    return builder.create<M::ConstantOp>(getLoc(), mlirLogicalType, attr)
         .getResult();
   }
   template<int KIND>
@@ -406,7 +404,7 @@ class ExprLowering {
   template<int KIND> M::Value *genval(const Ev::Not<KIND> &op) {
     auto *context{builder.getContext()};
     auto mlirLogical{builder.create<fir::ConvertOp>(
-        getLoc(), getMLIRlogicalType(), genval(op.left()))};
+        getLoc(), getMLIRlogicalType(context), genval(op.left()))};
     auto i1One{genMLIRLogicalConstant(context, 1)};
     auto mlirRes{builder.create<M::XOrOp>(getLoc(), mlirLogical, i1One)};
     auto firTy{getFIRType(builder.getContext(), defaults, LogicalCat, KIND)};
@@ -427,9 +425,8 @@ class ExprLowering {
       result = createCompareOp<M::CmpIOp>(op, M::CmpIPredicate::ne);
       break;
     case Ev::LogicalOperator::Not:
-      // LogicalOperations are binary operations. Expr for Not is
-      // evaluate::Not<KIND>.
-      assert(false);
+      // lib/evaluate expression for .NOT. is evaluate::Not<KIND>.
+      assert(false && ".NOT. is not a binary operator");
       break;
     }
     if (!result) {
