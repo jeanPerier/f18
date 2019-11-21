@@ -637,11 +637,19 @@ class FIRConverter {
 
   void genCondBranch(
       M::Value *cond, Fl::LabelMention trueBlock, Fl::LabelMention falseBlock) {
+
+    // cond may be a fir.logical, convert it to mlir boolean `i1` if needed.
+    // Maybe it is already `i1`, but then converting from `i1` to `i1` will be a
+    // no-op.
+    M::Type mlirLogicalTy{getMLIRlogicalType(builder->getContext())};
+    M::Value *mlirCond{
+        builder->create<fir::ConvertOp>(toLocation(), mlirLogicalTy, cond)};
+
     auto trueIter{blkMap().find(trueBlock)};
     auto falseIter{blkMap().find(falseBlock)};
     if (trueIter != blkMap().end() && falseIter != blkMap().end()) {
       llvm::SmallVector<M::Value *, 2> blanks;
-      build().create<M::CondBranchOp>(toLocation(), cond, trueIter->second,
+      build().create<M::CondBranchOp>(toLocation(), mlirCond, trueIter->second,
           blanks, falseIter->second, blanks);
     } else {
       using namespace std::placeholders;
@@ -657,8 +665,8 @@ class FIRConverter {
             builder->create<M::CondBranchOp>(
                 location, cnd, tdp->second, blk, fdp->second, blk);
           },
-          &build(), build().getInsertionBlock(), cond, trueBlock, falseBlock,
-          toLocation(), _1));
+          &build(), build().getInsertionBlock(), mlirCond, trueBlock,
+          falseBlock, toLocation(), _1));
     }
   }
 
@@ -898,25 +906,45 @@ void FIRConverter::genFIR(
 /// translate action statements
 void FIRConverter::genFIR(AnalysisData &ad, const Fl::ActionOp &op) {
   setCurrentPos(op.v->source);
-  std::visit(Co::visitors{
-                 [](const Pa::ContinueStmt &) { TODO(); },
-                 [](const Pa::FailImageStmt &) { TODO(); },
-                 [](const Co::Indirection<Pa::ArithmeticIfStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::AssignedGotoStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::ComputedGotoStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::CycleStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::ExitStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::GotoStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::IfStmt> &) { TODO(); },
-                 [](const Co::Indirection<Pa::StopStmt> &) { TODO(); },
-                 [&](const Co::Indirection<Pa::AssignStmt> &assign) {
-                   genFIR(ad, assign.value());
-                 },
-                 [](const Co::Indirection<Pa::ReturnStmt> &) {
-                   assert(false && "should be a ReturnOp");
-                 },
-                 [&](const auto &stmt) { genFIR(stmt); },
-             },
+  std::visit(
+      Co::visitors{
+          [](const Pa::ContinueStmt &) { TODO(); },
+          [](const Pa::FailImageStmt &) { TODO(); },
+          [](const Co::Indirection<Pa::ArithmeticIfStmt> &) { TODO(); },
+          [](const Co::Indirection<Pa::AssignedGotoStmt> &) { TODO(); },
+          [](const Co::Indirection<Pa::ComputedGotoStmt> &) { TODO(); },
+          [](const Co::Indirection<Pa::CycleStmt> &) { TODO(); },
+          [](const Co::Indirection<Pa::ExitStmt> &) { TODO(); },
+          [](const Co::Indirection<Pa::GotoStmt> &) { TODO(); },
+          [&](const Co::Indirection<Pa::IfStmt> &ifStmt) {
+            // FIXME: this only works if IfStmt contains an AssignmentStmt.
+            // Flattened could also be changed to avoid having to do something
+            // here:
+            //    The ActionOp created should describe the action inside the
+            //    IfStmt instead of The IfStmt itseld.
+            // Not sure.
+            const Pa::ActionStmt &action{
+                std::get<Pa::UnlabeledStatement<Pa::ActionStmt>>(
+                    ifStmt.value().t)
+                    .statement};
+            std::visit(
+                Co::visitors{
+                    [&](const common::Indirection<Pa::AssignmentStmt> &stmt) {
+                      genFIR(stmt.value());
+                    },
+                    [](const auto &) { TODO(); },
+                },
+                action.u);
+          },
+          [](const Co::Indirection<Pa::StopStmt> &) { TODO(); },
+          [&](const Co::Indirection<Pa::AssignStmt> &assign) {
+            genFIR(ad, assign.value());
+          },
+          [](const Co::Indirection<Pa::ReturnStmt> &) {
+            assert(false && "should be a ReturnOp");
+          },
+          [&](const auto &stmt) { genFIR(stmt); },
+      },
       op.v->statement.u);
 }
 
