@@ -47,8 +47,6 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
 
-#include <iostream>
-
 namespace Br = Fortran::burnside;
 namespace Co = Fortran::common;
 namespace Ev = Fortran::evaluate;
@@ -233,24 +231,6 @@ class ExprLowering {
   }
   M::Value *gendef(Se::SymbolRef sym) { return gen(sym); }
 
-  // Memory type to compute types (logical are kept as `fr.logcial` in memory,
-  // but used as `i1`)
-  M::Value *convertMemoryToComputeFormat(M::Value *memValue) {
-    auto *computeValue{memValue};
-    if (memValue) {
-      M::Type type{memValue->getType()};
-      if (type.isa<fir::LogicalType>()) {
-        M::Type mlirLogicalType{getMLIRlogicalType(builder.getContext())};
-        computeValue = builder.create<fir::ConvertOp>(
-            getLoc(), mlirLogicalType, memValue);  // TODO: OK
-      } else if (auto seqType{type.dyn_cast_or_null<fir::SequenceType>()}) {
-        assert(!seqType.getEleTy().isa<fir::LogicalType>() &&
-            "logical array loads not implemented");
-      }
-    }
-    return computeValue;
-  }
-
   M::Value *genval(Se::SymbolRef sym) {
     // Do not load the same symbols several time in one expression.
     // Fortran guarantees variable value must be the same wherever it
@@ -410,7 +390,7 @@ class ExprLowering {
   template<typename A> M::Value *genval(Ev::Parentheses<A> const &) { TODO(); }
 
   template<int KIND> M::Value *genval(const Ev::Not<KIND> &op) {
-    // Request operands to be generated as `i1`
+    // Request operands to be generated as `i1` and restore after this scope.
     auto restorer{common::ScopedSet(genLogicalAsI1, true)};
     auto *context{builder.getContext()};
     auto logical{genval(op.left())};
@@ -419,7 +399,7 @@ class ExprLowering {
   }
 
   template<int KIND> M::Value *genval(Ev::LogicalOperation<KIND> const &op) {
-    // Request operands to be generated as `i1`
+    // Request operands to be generated as `i1` and restore after this scope.
     auto restorer{common::ScopedSet(genLogicalAsI1, true)};
     mlir::Value *result{nullptr};
     switch (op.logicalOperator) {
@@ -701,8 +681,7 @@ class ExprLowering {
       M::FunctionType funTy{
           M::FunctionType::get(argTypes, resultType, builder.getContext())};
       M::FuncOp func{getFunction(funRef.proc().GetName(), funTy)};
-      M::CallOp call{builder.create<M::CallOp>(getLoc(), func, operands)};
-      return convertMemoryToComputeFormat(call.getResult(0));
+      return builder.create<M::CallOp>(getLoc(), func, operands).getResult(0);
     }
   }
 
@@ -717,30 +696,8 @@ class ExprLowering {
     return std::visit([&](const auto &e) { return genval(e); }, exp.u);
   }
 
-  //  template<int KIND> M::Value *genLogicalVal(Ev::Expr<SomeType> const &exp,
-  //  bool genI1) {
-  //    const auto&logicalExpr{std::get<Ev::Expr<SomeLogical>>(exp.u)};
-  //    return std::visit([&](const auto &e) { return genLogicalVal(e, genI1);
-  //    }, logicalExpr.u);
-  //  }
-  //  template<int KIND> M::Value *genLogicalVal(Ev::Expr<Ev::Type<LogicalCat,
-  //  KIND>> const &exp, bool genI1) {
-  //    using TL = Ev::Type<LogicalCat, KIND>;
-  //    return std::visit(Co::visitors{
-  //      [&](const Ev::Convert<TL> &e) { return genval(e); },
-  //      [&](const Ev::Parentheses<TL> &e) { return genval(e); },
-  //      [&](const Ev::Not<TL> &e) { return genval(e); },
-  //      [&](const Ev::LogicalOperation<TL> &e) { return genval(e); },
-  //      [&](const Ev::Relational<SomeType> &e) { return genval(e); },
-  //      [&](const Ev::Constant<TL> &e) { return genval(e); },
-  //      [&](const Ev::ArrayConstructor<TL> &e) { return genval(e); },
-  //      [&](const Ev::Designator<TL> &e) { return genval(e); },
-  //      [&](const Ev::FunctionRef<TL> &e) { return genval(e); },
-  //    }, exp.u);
-  //  }
   template<int KIND>
   M::Value *genval(Ev::Expr<Ev::Type<LogicalCat, KIND>> const &exp) {
-    std::cout << "intercepted logical generation" << std::endl;
     auto *rawResult{
         std::visit([&](const auto &e) { return genval(e); }, exp.u)};
     // Handle the `i1` to `fir.logical` conversions as needed.
@@ -761,8 +718,8 @@ class ExprLowering {
               getLoc(), firLogicalType, rawResult);
         }
       } else if (auto seqType{type.dyn_cast_or_null<fir::SequenceType>()}) {
-        // TODO: this depends on how array expressions will be lowered
-        // Conversions at array level should probably be avoided.
+        // TODO: Conversions at array level should probably be avoided.
+        // This depends on how array expressions will be lowered.
         assert(false && "logical array loads not yet implemented");
       } else {
         assert(false && "unexpected logical type in expression");
