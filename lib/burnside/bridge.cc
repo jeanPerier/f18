@@ -117,6 +117,10 @@ class FIRConverter {
     return createSomeExpression(
         loc, build(), *expr, symbolMap, defaults, intrinsics);
   }
+  M::Value *createLogicalExprAsI1(M::Location loc, const SomeExpr *expr) {
+    return createI1LogicalExpression(
+        loc, build(), *expr, symbolMap, defaults, intrinsics);
+  }
   M::Value *createTemp(M::Type type, Se::Symbol *symbol = nullptr) {
     return createTemporary(toLocation(), build(), symbolMap, type, symbol);
   }
@@ -516,7 +520,7 @@ class FIRConverter {
       const A &tuple, Fl::LabelMention trueLabel, Fl::LabelMention falseLabel) {
     auto *exprRef{Se::GetExpr(std::get<Pa::ScalarLogicalExpr>(tuple))};
     assert(exprRef && "condition expression missing");
-    auto *cond{createFIRExpr(toLocation(), exprRef)};
+    auto *cond{createLogicalExprAsI1(toLocation(), exprRef)};
     genCondBranch(cond, trueLabel, falseLabel);
   }
   void genFIR(const Pa::Statement<Pa::IfThenStmt> &stmt,
@@ -561,7 +565,7 @@ class FIRConverter {
               [&](const parser::ScalarLogicalExpr &logical) {
                 auto loc{toLocation(stmt.source)};
                 auto *exp{Se::GetExpr(logical)};
-                condition = createFIRExpr(loc, exp);
+                condition = createLogicalExprAsI1(loc, exp);
                 return false;
               },
               [&](const parser::LoopControl::Concurrent &concurrent) {
@@ -584,30 +588,12 @@ class FIRConverter {
   // Action statements
   void genFIR(const Pa::AllocateStmt &stmt) { TODO(); }
 
-  void genStore(M::Value *value, M::Value *address) {
-    auto *memValue{value};
-    auto loc{toLocation()};
-    if (address) {
-      M::Type memType{address->getType()};
-      if (auto refTy{memType.dyn_cast_or_null<fir::ReferenceType>()}) {
-        M::Type type{refTy.getEleTy()};
-        if (type.isa<fir::LogicalType>()) {
-          memValue = build().create<fir::ConvertOp>(loc, type, value);
-        } else if (auto seqType{type.dyn_cast_or_null<fir::SequenceType>()}) {
-          assert(!seqType.getEleTy().isa<fir::LogicalType>() &&
-              "logical array store not implemented");
-        }
-      } else {
-        TODO();  // pointers and allocatable, box
-      }
-    }
-    build().create<fir::StoreOp>(loc, memValue, address);
-  }
   void genFIR(const Pa::AssignmentStmt &stmt) {
     auto *rhs{Se::GetExpr(std::get<Pa::Expr>(stmt.t))};
     auto *lhs{Se::GetExpr(std::get<Pa::Variable>(stmt.t))};
     auto loc{toLocation()};
-    genStore(createFIRExpr(loc, rhs), createFIRAddr(loc, lhs));
+    build().create<fir::StoreOp>(
+        loc, createFIRExpr(loc, rhs), createFIRAddr(loc, lhs));
   }
   void genFIR(const Pa::BackspaceStmt &stmt) { TODO(); }
   void genFIR(const Pa::CallStmt &stmt) { TODO(); }
