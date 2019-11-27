@@ -124,10 +124,11 @@ class ExprLowering {
         .getResult();
   }
   template<int KIND>
-  M::Value *genLogicalConstant(M::MLIRContext *context, bool value) {
+  M::Value *genFIRLogicalConstant(M::MLIRContext *context, bool value) {
     auto mlirCst{genMLIRLogicalConstant(context, value)};
     M::Type firLogicalTy{getFIRType(context, defaults, LogicalCat, KIND)};
-    auto res{builder.create<fir::ConvertOp>(getLoc(), firLogicalTy, mlirCst)};
+    auto res{builder.create<fir::ConvertOp>(
+        getLoc(), firLogicalTy, mlirCst)};  // TODO: OK
     return res.getResult();
   }
 
@@ -155,19 +156,6 @@ class ExprLowering {
   }
   template<typename OpTy, typename A> M::Value *createBinaryOp(A const &ex) {
     return createBinaryOp<OpTy>(ex, genval(ex.left()), genval(ex.right()));
-  }
-  template<typename OpTy, typename A> M::Value *createLogicalOp(A const &ex) {
-    auto mlirTy{M::IntegerType::get(1, builder.getContext())};
-    auto *lhs{genval(ex.left())};
-    auto *rhs{genval(ex.right())};
-    // mlir logical ops do not work with fir.logical<k>, so the operation
-    // is wrapped in conversions
-    auto lhsConv{builder.create<fir::ConvertOp>(getLoc(), mlirTy, lhs)};
-    auto rhsConv{builder.create<fir::ConvertOp>(getLoc(), mlirTy, rhs)};
-    auto op{createBinaryOp<OpTy>(ex, lhsConv, rhsConv)};
-    assert(lhs);
-    auto resType{lhs->getType()};
-    return builder.create<fir::ConvertOp>(getLoc(), resType, op);
   }
 
   M::FuncOp getFunction(L::StringRef name, M::FunctionType funTy) {
@@ -249,6 +237,25 @@ class ExprLowering {
         translateSymbolToFIRType(builder.getContext(), defaults, sym), &*sym);
   }
   M::Value *gendef(Se::SymbolRef sym) { return gen(sym); }
+
+  // Memory type to compute types (logical are kept as `fr.logcial` in memory,
+  // but used as `i1`)
+  M::Value *convertMemoryToComputeFormat(M::Value *memValue) {
+    auto *computeValue{memValue};
+    if (memValue) {
+      M::Type type{memValue->getType()};
+      if (type.isa<fir::LogicalType>()) {
+        M::Type mlirLogicalType{getMLIRlogicalType(builder.getContext())};
+        computeValue = builder.create<fir::ConvertOp>(
+            getLoc(), mlirLogicalType, memValue);  // TODO: OK
+      } else if (auto seqType{type.dyn_cast_or_null<fir::SequenceType>()}) {
+        assert(!seqType.getEleTy().isa<fir::LogicalType>() &&
+            "logical array loads not implemented");
+      }
+    }
+    return computeValue;
+  }
+
   M::Value *genval(Se::SymbolRef sym) {
     // Do not load the same symbols several time in one expression.
     // Fortran guarantees variable value must be the same wherever it
@@ -256,7 +263,8 @@ class ExprLowering {
     if (mlir::Value * loaded{loadedSymbols.lookupSymbol(sym)}) {
       return loaded;
     } else {
-      mlir::Value *load{builder.create<fir::LoadOp>(getLoc(), gen(sym))};
+      mlir::Value *rawLoad{builder.create<fir::LoadOp>(getLoc(), gen(sym))};
+      mlir::Value *load{convertMemoryToComputeFormat(rawLoad)};
       loadedSymbols.addSymbol(sym, load);
       return load;
     }
@@ -385,8 +393,7 @@ class ExprLowering {
       static_assert(TC == CharacterCat);
       TODO();
     }
-    auto logicalTy{getFIRType(builder.getContext(), defaults, LogicalCat)};
-    return builder.create<fir::ConvertOp>(getLoc(), logicalTy, result);
+    return result;
   }
 
   // TODO JP: the thing below should not be required.
@@ -397,27 +404,37 @@ class ExprLowering {
   template<Co::TypeCategory TC1, int KIND, Co::TypeCategory TC2>
   M::Value *genval(Ev::Convert<Ev::Type<TC1, KIND>, TC2> const &convert) {
     auto ty{getFIRType(builder.getContext(), defaults, TC1, KIND)};
-    return builder.create<fir::ConvertOp>(getLoc(), ty, genval(convert.left()));
+    M::Value *operand{genval(convert.left())};
+    // Do not convert in-between logical types because they are all handled as
+    // `i1`
+    if constexpr (TC1 == LogicalCat && TC2 == LogicalCat) {
+      assert(operand && operand->getType().isa<M::IntegerType>() &&
+          "expected logical as i1");
+      return operand;
+    } else if constexpr (TC1 == LogicalCat) {
+      // First convert to fir.logical and then to `i1`, which how logicals are
+      // handled in FIR.
+      M::Value *firRes{builder.create<fir::ConvertOp>(getLoc(), ty, operand)};
+      auto mlirType{getMLIRlogicalType(builder.getContext())};
+      return builder.create<fir::ConvertOp>(getLoc(), mlirType, firRes);
+    } else {
+      return builder.create<fir::ConvertOp>(getLoc(), ty, operand);
+    }
   }
   template<typename A> M::Value *genval(Ev::Parentheses<A> const &) { TODO(); }
 
   template<int KIND> M::Value *genval(const Ev::Not<KIND> &op) {
     auto *context{builder.getContext()};
-    auto mlirLogical{builder.create<fir::ConvertOp>(
-        getLoc(), getMLIRlogicalType(context), genval(op.left()))};
+    auto mlirLogical{genval(op.left())};
     auto i1One{genMLIRLogicalConstant(context, 1)};
-    auto mlirRes{builder.create<M::XOrOp>(getLoc(), mlirLogical, i1One)};
-    auto firTy{getFIRType(builder.getContext(), defaults, LogicalCat, KIND)};
-    return builder.create<fir::ConvertOp>(getLoc(), firTy, mlirRes).getResult();
+    return builder.create<M::XOrOp>(getLoc(), mlirLogical, i1One).getResult();
   }
 
   template<int KIND> M::Value *genval(Ev::LogicalOperation<KIND> const &op) {
     mlir::Value *result{nullptr};
     switch (op.logicalOperator) {
-    case Ev::LogicalOperator::And:
-      result = createLogicalOp<M::AndOp>(op);
-      break;
-    case Ev::LogicalOperator::Or: result = createLogicalOp<M::OrOp>(op); break;
+    case Ev::LogicalOperator::And: result = createBinaryOp<M::AndOp>(op); break;
+    case Ev::LogicalOperator::Or: result = createBinaryOp<M::OrOp>(op); break;
     case Ev::LogicalOperator::Eqv:
       result = createCompareOp<M::CmpIOp>(op, M::CmpIPredicate::eq);
       break;
@@ -432,8 +449,7 @@ class ExprLowering {
     if (!result) {
       assert(false && "unhandled logical operation");
     }
-    auto logicalTy{getFIRType(builder.getContext(), defaults, LogicalCat)};
-    return builder.create<fir::ConvertOp>(getLoc(), logicalTy, result);
+    return result;
   }
 
   template<Co::TypeCategory TC, int KIND>
@@ -451,7 +467,7 @@ class ExprLowering {
     } else if constexpr (TC == LogicalCat) {
       auto opt{con.GetScalarValue()};
       if (opt.has_value())
-        return genLogicalConstant<KIND>(builder.getContext(), opt->IsTrue());
+        return genMLIRLogicalConstant(builder.getContext(), opt->IsTrue());
       assert(false && "logical constant has no value");
       return {};
     } else if constexpr (TC == RealCat) {
@@ -696,7 +712,7 @@ class ExprLowering {
           M::FunctionType::get(argTypes, resultType, builder.getContext())};
       M::FuncOp func{getFunction(funRef.proc().GetName(), funTy)};
       M::CallOp call{builder.create<M::CallOp>(getLoc(), func, operands)};
-      return call.getResult(0);
+      return convertMemoryToComputeFormat(call.getResult(0));
     }
   }
 
