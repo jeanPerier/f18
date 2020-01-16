@@ -72,6 +72,9 @@ M::Value B::OpBuilderHandler::getIntegerConstant(M::Type integerType,
   return create<M::ConstantOp>(integerType,
                                builder.getIntegerAttr(integerType, cst));
 }
+
+// LoopCreator implementation
+
 void B::LoopCreator::genLoop(M::Value lb, M::Value ub, M::Value step,
                              const BodyGenerator &bodyGenerator) {
   auto lbi{convertToIndexType(lb)};
@@ -114,6 +117,8 @@ M::Value B::LoopCreator::convertToIndexType(M::Value integer) {
          "expected integer");
   return create<fir::ConvertOp>(getIndexType(), integer);
 }
+
+// CharacterOpsCreator implementation
 
 void B::CharacterOpsCreator::genCopy(CharValue &dest, CharValue &src,
                                      M::Value count) {
@@ -169,4 +174,81 @@ fir::CharacterType B::CharacterOpsCreator::CharValue::getCharacterType() {
   auto type{getReferenceType().getEleTy().dyn_cast<fir::CharacterType>()};
   assert(type && "expected character type");
   return type;
+}
+
+// ComplexOpsCreator implementation
+
+mlir::Type B::ComplexOpsCreator::getComplexPartType(fir::KindTy complexKind) {
+  return convertReal(builder.getContext(), complexKind);
+}
+mlir::Type B::ComplexOpsCreator::getComplexPartType(mlir::Type complexType) {
+  return getComplexPartType(complexType.cast<fir::CplxType>().getFKind());
+}
+mlir::Type B::ComplexOpsCreator::getComplexPartType(mlir::Value cplx) {
+  assert(cplx != nullptr);
+  return getComplexPartType(cplx->getType());
+}
+
+mlir::Value B::ComplexOpsCreator::createComplex(fir::KindTy kind,
+                                                mlir::Value real,
+                                                mlir::Value imag) {
+  mlir::Type complexTy{fir::CplxType::get(builder.getContext(), kind)};
+  mlir::Value und{create<fir::UndefOp>(complexTy)};
+  return insert<Part::Imag>(insert<Part::Real>(und, real), imag);
+}
+
+using CplxPart = B::ComplexOpsCreator::Part;
+template <CplxPart partId>
+mlir::Value B::ComplexOpsCreator::createPartId() {
+  auto type{mlir::IntegerType::get(32, builder.getContext())};
+  return getIntegerConstant(type, static_cast<int>(partId));
+}
+
+template <CplxPart partId>
+mlir::Value B::ComplexOpsCreator::extract(mlir::Value cplx) {
+  return create<fir::ExtractValueOp>(getComplexPartType(cplx), cplx,
+                                     createPartId<partId>());
+}
+template mlir::Value B::ComplexOpsCreator::extract<CplxPart::Real>(mlir::Value);
+template mlir::Value B::ComplexOpsCreator::extract<CplxPart::Imag>(mlir::Value);
+
+template <CplxPart partId>
+mlir::Value B::ComplexOpsCreator::insert(mlir::Value cplx, mlir::Value part) {
+  assert(cplx != nullptr);
+  return create<fir::InsertValueOp>(cplx->getType(), cplx, part,
+                                    createPartId<partId>());
+}
+template mlir::Value B::ComplexOpsCreator::insert<CplxPart::Real>(mlir::Value,
+                                                                  mlir::Value);
+template mlir::Value B::ComplexOpsCreator::insert<CplxPart::Imag>(mlir::Value,
+                                                                  mlir::Value);
+
+mlir::Value B::ComplexOpsCreator::extractComplexPart(mlir::Value cplx,
+                                                     bool isImagPart) {
+  return isImagPart ? extract<Part::Imag>(cplx) : extract<Part::Real>(cplx);
+}
+
+mlir::Value B::ComplexOpsCreator::insertComplexPart(mlir::Value cplx,
+                                                    mlir::Value part,
+                                                    bool isImagPart) {
+  return isImagPart ? insert<Part::Imag>(cplx, part)
+                    : insert<Part::Real>(cplx, part);
+}
+
+mlir::Value B::ComplexOpsCreator::createComplexCompare(mlir::Value cplx1,
+                                                       mlir::Value cplx2,
+                                                       bool eq) {
+  mlir::Value real1{extract<Part::Real>(cplx1)};
+  mlir::Value real2{extract<Part::Real>(cplx2)};
+  mlir::Value imag1{extract<Part::Imag>(cplx1)};
+  mlir::Value imag2{extract<Part::Imag>(cplx2)};
+
+  mlir::CmpFPredicate predicate{eq ? mlir::CmpFPredicate::UEQ
+                                   : mlir::CmpFPredicate::UNE};
+  mlir::Value realCmp{create<mlir::CmpFOp>(predicate, real1, real2)};
+  mlir::Value imagCmp{create<mlir::CmpFOp>(predicate, imag1, imag2)};
+
+  if (eq)
+    return create<mlir::AndOp>(realCmp, imagCmp);
+  return create<mlir::OrOp>(realCmp, imagCmp);
 }

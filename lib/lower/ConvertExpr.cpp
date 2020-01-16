@@ -18,7 +18,6 @@
 #include "fir/Dialect/FIROps.h"
 #include "fir/Dialect/FIRType.h"
 #include "flang/lower/Bridge.h"
-#include "flang/lower/ComplexHandler.h"
 #include "flang/lower/ConvertType.h"
 #include "flang/lower/OpBuilder.h"
 #include "flang/lower/Runtime.h"
@@ -279,7 +278,7 @@ class ExprLowering {
 
   template <int KIND>
   M::Value genval(Ev::ComplexComponent<KIND> const &part) {
-    return ComplexHandler{builder, getLoc()}.extractComplexPart(
+    return ComplexOpsCreator{builder, getLoc()}.extractComplexPart(
         genval(part.left()), part.isImaginaryPart);
   }
 
@@ -361,7 +360,7 @@ class ExprLowering {
 
   template <int KIND>
   M::Value genval(Ev::ComplexConstructor<KIND> const &op) {
-    return ComplexHandler{builder, getLoc()}.createComplex(
+    return ComplexOpsCreator{builder, getLoc()}.createComplex(
         KIND, genval(op.left()), genval(op.right()));
   }
   template <int KIND>
@@ -395,7 +394,7 @@ class ExprLowering {
       bool eq{op.opr == Co::RelationalOperator::EQ};
       assert(eq || op.opr == Co::RelationalOperator::NE &&
                        "relation undefined for complex");
-      result = ComplexHandler{builder, getLoc()}.createComplexCompare(
+      result = ComplexOpsCreator{builder, getLoc()}.createComplexCompare(
           genval(op.left()), genval(op.right()), eq);
     } else {
       static_assert(TC == CharacterCat);

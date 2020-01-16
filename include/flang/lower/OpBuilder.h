@@ -23,6 +23,7 @@ class StringRef;
 namespace fir {
 class CharacterType;
 class ReferenceType;
+using KindTy = int;
 } // namespace fir
 
 namespace Fortran {
@@ -123,6 +124,42 @@ public:
 
 private:
   mlir::Value getBlankConstant(fir::CharacterType type);
+};
+
+/// Provide helper to generate Complex manipulations in FIR.
+class ComplexOpsCreator : public OpBuilderHandler {
+public:
+  // The values of part enum members are meaningful for
+  // InsertValueOp and ExtractValueOp so they are explicit.
+  enum class Part { Real = 0, Imag = 1 };
+
+  ComplexOpsCreator(mlir::OpBuilder &b, mlir::Location l)
+      : OpBuilderHandler{b, l} {}
+  ComplexOpsCreator(OpBuilderHandler &bw) : OpBuilderHandler{bw} {}
+
+  // Type helper. They do not create MLIR operations.
+  mlir::Type getComplexPartType(mlir::Value cplx);
+  mlir::Type getComplexPartType(mlir::Type complexType);
+  mlir::Type getComplexPartType(fir::KindTy complexKind);
+
+  // Complex operation creation helper. They create MLIR operations.
+  mlir::Value createComplex(fir::KindTy kind, mlir::Value real,
+                            mlir::Value imag);
+  mlir::Value extractComplexPart(mlir::Value cplx, bool isImagPart);
+  mlir::Value insertComplexPart(mlir::Value cplx, mlir::Value part,
+                                bool isImagPart);
+
+  template <Part partId>
+  mlir::Value extract(mlir::Value cplx);
+  template <Part partId>
+  mlir::Value insert(mlir::Value cplx, mlir::Value part);
+
+  mlir::Value createComplexCompare(mlir::Value cplx1, mlir::Value cplx2,
+                                   bool eq);
+
+private:
+  template <Part partId>
+  mlir::Value createPartId();
 };
 
 /// Get the current Module
