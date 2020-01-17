@@ -279,7 +279,7 @@ class ExprLowering {
 
   template <int KIND>
   M::Value genval(Ev::ComplexComponent<KIND> const &part) {
-    return ComplexOpsCreator{builder, getLoc()}.extractComplexPart(
+    return ComplexOpsBuilder{builder, getLoc()}.extractComplexPart(
         genval(part.left()), part.isImaginaryPart);
   }
 
@@ -361,7 +361,7 @@ class ExprLowering {
 
   template <int KIND>
   M::Value genval(Ev::ComplexConstructor<KIND> const &op) {
-    return ComplexOpsCreator{builder, getLoc()}.createComplex(
+    return ComplexOpsBuilder{builder, getLoc()}.createComplex(
         KIND, genval(op.left()), genval(op.right()));
   }
   template <int KIND>
@@ -395,7 +395,7 @@ class ExprLowering {
       bool eq{op.opr == Co::RelationalOperator::EQ};
       assert(eq || op.opr == Co::RelationalOperator::NE &&
                        "relation undefined for complex");
-      result = ComplexOpsCreator{builder, getLoc()}.createComplexCompare(
+      result = ComplexOpsBuilder{builder, getLoc()}.createComplexCompare(
           genval(op.left()), genval(op.right()), eq);
     } else {
       static_assert(TC == CharacterCat);

@@ -638,12 +638,12 @@ M::Value IntrinsicLibrary::Implementation::genConjg(Context &genCtxt,
   M::Type resType{genCtxt.getResultType()};
   assert(resType == genCtxt.arguments[0].getType());
   M::OpBuilder &builder{*genCtxt.builder};
-  ComplexOpsCreator cplxHandler{builder, genCtxt.loc};
+  ComplexOpsBuilder cplxHandler{builder, genCtxt.loc};
 
   M::Value cplx = genCtxt.arguments[0];
-  M::Value imag = cplxHandler.extract<ComplexOpsCreator::Part::Imag>(cplx);
+  M::Value imag = cplxHandler.extract<ComplexOpsBuilder::Part::Imag>(cplx);
   M::Value negImag = genCtxt.builder->create<fir::NegfOp>(genCtxt.loc, imag);
-  return cplxHandler.insert<ComplexOpsCreator::Part::Imag>(cplx, negImag);
+  return cplxHandler.insert<ComplexOpsBuilder::Part::Imag>(cplx, negImag);
 }
 
 // MERGE
