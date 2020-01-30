@@ -11,6 +11,7 @@
 #include "flang/common/Fortran-features.h"
 #include "flang/common/default-kinds.h"
 #include "flang/evaluate/expression.h"
+#include "flang/lower/ASTBuilder.h"
 #include "flang/parser/characters.h"
 #include "flang/parser/dump-parse-tree.h"
 #include "flang/parser/message.h"
@@ -22,6 +23,7 @@
 #include "flang/semantics/expression.h"
 #include "flang/semantics/semantics.h"
 #include "flang/semantics/unparse-with-symbols.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -92,6 +94,7 @@ struct DriverOptions {
   bool dumpUnparse{false};
   bool dumpUnparseWithSymbols{false};
   bool dumpParseTree{false};
+  bool dumpIntermediateAST{false};
   bool dumpSymbols{false};
   bool debugResolveNames{false};
   bool debugNoSemantics{false};
@@ -308,6 +311,12 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
         nullptr /* action before each statement */, &asFortran);
     return {};
   }
+  if (driver.dumpIntermediateAST) {
+    Fortran::lower::AST::Program *ast{Fortran::lower::createAST(parseTree)};
+    Fortran::lower::annotateControl(*ast);
+    Fortran::lower::dumpAST(llvm::outs(), *ast);
+    delete ast;
+  }
   if (driver.parseOnly) {
     return {};
   }
@@ -475,6 +484,9 @@ int main(int argc, char *const argv[]) {
       options.needProvenanceRangeToCharBlockMappings = true;
     } else if (arg == "-fdebug-dump-parse-tree") {
       driver.dumpParseTree = true;
+    } else if (arg == "-fdebug-intermediate-ast") {
+      driver.dumpIntermediateAST = true;
+    } else if (arg == "-fdebug-resolve-names") {
     } else if (arg == "-fdebug-dump-symbols") {
       driver.dumpSymbols = true;
     } else if (arg == "-fdebug-resolve-names") {
