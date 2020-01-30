@@ -12,6 +12,7 @@
 #include "flang/parser/parse-tree.h"
 #include "flang/semantics/scope.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 
 namespace Fortran::lower {
 namespace AST {
@@ -351,7 +352,7 @@ private:
 } // namespace AST
 
 /// Create an AST from the parse tree
-AST::Program *createAST(const Fortran::parser::Program &root);
+std::unique_ptr<AST::Program> createAST(const Fortran::parser::Program &root);
 
 /// Decorate the AST with control flow annotations
 ///
