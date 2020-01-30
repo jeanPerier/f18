@@ -21,6 +21,11 @@ struct Program;
 struct ModuleLikeUnit;
 struct FunctionLikeUnit;
 
+// TODO: A collection of Evaluations can obviously be any of the container
+// types; leaving this as a std::list _for now_ because we reserve the right to
+// insert AST nodes in any order in O(1) time.
+using EvaluationCollection = std::list<Evaluation>;
+
 using ParentType =
     std::variant<Program *, ModuleLikeUnit *, FunctionLikeUnit *, Evaluation *>;
 
@@ -49,20 +54,20 @@ struct CGJump {
 /// is `A` a construct (or directive)?
 template <typename A>
 constexpr static bool isConstruct() {
-  return std::is_same_v<A, parser::AssociateConstruct> ||
-         std::is_same_v<A, parser::BlockConstruct> ||
-         std::is_same_v<A, parser::CaseConstruct> ||
-         std::is_same_v<A, parser::ChangeTeamConstruct> ||
-         std::is_same_v<A, parser::CriticalConstruct> ||
-         std::is_same_v<A, parser::DoConstruct> ||
-         std::is_same_v<A, parser::IfConstruct> ||
-         std::is_same_v<A, parser::SelectRankConstruct> ||
-         std::is_same_v<A, parser::SelectTypeConstruct> ||
-         std::is_same_v<A, parser::WhereConstruct> ||
-         std::is_same_v<A, parser::ForallConstruct> ||
-         std::is_same_v<A, parser::CompilerDirective> ||
-         std::is_same_v<A, parser::OpenMPConstruct> ||
-         std::is_same_v<A, parser::OmpEndLoopDirective>;
+  return std::is_same_v<A, Fortran::parser::AssociateConstruct> ||
+         std::is_same_v<A, Fortran::parser::BlockConstruct> ||
+         std::is_same_v<A, Fortran::parser::CaseConstruct> ||
+         std::is_same_v<A, Fortran::parser::ChangeTeamConstruct> ||
+         std::is_same_v<A, Fortran::parser::CriticalConstruct> ||
+         std::is_same_v<A, Fortran::parser::DoConstruct> ||
+         std::is_same_v<A, Fortran::parser::IfConstruct> ||
+         std::is_same_v<A, Fortran::parser::SelectRankConstruct> ||
+         std::is_same_v<A, Fortran::parser::SelectTypeConstruct> ||
+         std::is_same_v<A, Fortran::parser::WhereConstruct> ||
+         std::is_same_v<A, Fortran::parser::ForallConstruct> ||
+         std::is_same_v<A, Fortran::parser::CompilerDirective> ||
+         std::is_same_v<A, Fortran::parser::OpenMPConstruct> ||
+         std::is_same_v<A, Fortran::parser::OmpEndLoopDirective>;
 }
 
 /// Function-like units can contains lists of evaluations.  These can be
@@ -71,63 +76,88 @@ constexpr static bool isConstruct() {
 struct Evaluation {
   using EvalVariant = std::variant<
       // action statements
-      const parser::AllocateStmt *, const parser::AssignmentStmt *,
-      const parser::BackspaceStmt *, const parser::CallStmt *,
-      const parser::CloseStmt *, const parser::ContinueStmt *,
-      const parser::CycleStmt *, const parser::DeallocateStmt *,
-      const parser::EndfileStmt *, const parser::EventPostStmt *,
-      const parser::EventWaitStmt *, const parser::ExitStmt *,
-      const parser::FailImageStmt *, const parser::FlushStmt *,
-      const parser::FormTeamStmt *, const parser::GotoStmt *,
-      const parser::IfStmt *, const parser::InquireStmt *,
-      const parser::LockStmt *, const parser::NullifyStmt *,
-      const parser::OpenStmt *, const parser::PointerAssignmentStmt *,
-      const parser::PrintStmt *, const parser::ReadStmt *,
-      const parser::ReturnStmt *, const parser::RewindStmt *,
-      const parser::StopStmt *, const parser::SyncAllStmt *,
-      const parser::SyncImagesStmt *, const parser::SyncMemoryStmt *,
-      const parser::SyncTeamStmt *, const parser::UnlockStmt *,
-      const parser::WaitStmt *, const parser::WhereStmt *,
-      const parser::WriteStmt *, const parser::ComputedGotoStmt *,
-      const parser::ForallStmt *, const parser::ArithmeticIfStmt *,
-      const parser::AssignStmt *, const parser::AssignedGotoStmt *,
-      const parser::PauseStmt *,
+      const Fortran::parser::AllocateStmt *,
+      const Fortran::parser::AssignmentStmt *,
+      const Fortran::parser::BackspaceStmt *, const Fortran::parser::CallStmt *,
+      const Fortran::parser::CloseStmt *, const Fortran::parser::ContinueStmt *,
+      const Fortran::parser::CycleStmt *,
+      const Fortran::parser::DeallocateStmt *,
+      const Fortran::parser::EndfileStmt *,
+      const Fortran::parser::EventPostStmt *,
+      const Fortran::parser::EventWaitStmt *, const Fortran::parser::ExitStmt *,
+      const Fortran::parser::FailImageStmt *,
+      const Fortran::parser::FlushStmt *, const Fortran::parser::FormTeamStmt *,
+      const Fortran::parser::GotoStmt *, const Fortran::parser::IfStmt *,
+      const Fortran::parser::InquireStmt *, const Fortran::parser::LockStmt *,
+      const Fortran::parser::NullifyStmt *, const Fortran::parser::OpenStmt *,
+      const Fortran::parser::PointerAssignmentStmt *,
+      const Fortran::parser::PrintStmt *, const Fortran::parser::ReadStmt *,
+      const Fortran::parser::ReturnStmt *, const Fortran::parser::RewindStmt *,
+      const Fortran::parser::StopStmt *, const Fortran::parser::SyncAllStmt *,
+      const Fortran::parser::SyncImagesStmt *,
+      const Fortran::parser::SyncMemoryStmt *,
+      const Fortran::parser::SyncTeamStmt *,
+      const Fortran::parser::UnlockStmt *, const Fortran::parser::WaitStmt *,
+      const Fortran::parser::WhereStmt *, const Fortran::parser::WriteStmt *,
+      const Fortran::parser::ComputedGotoStmt *,
+      const Fortran::parser::ForallStmt *,
+      const Fortran::parser::ArithmeticIfStmt *,
+      const Fortran::parser::AssignStmt *,
+      const Fortran::parser::AssignedGotoStmt *,
+      const Fortran::parser::PauseStmt *,
       // compiler generated ops
       CGJump,
       // other statements
-      const parser::FormatStmt *, const parser::EntryStmt *,
-      const parser::DataStmt *, const parser::NamelistStmt *,
+      const Fortran::parser::FormatStmt *, const Fortran::parser::EntryStmt *,
+      const Fortran::parser::DataStmt *, const Fortran::parser::NamelistStmt *,
       // constructs
-      const parser::AssociateConstruct *, const parser::BlockConstruct *,
-      const parser::CaseConstruct *, const parser::ChangeTeamConstruct *,
-      const parser::CriticalConstruct *, const parser::DoConstruct *,
-      const parser::IfConstruct *, const parser::SelectRankConstruct *,
-      const parser::SelectTypeConstruct *, const parser::WhereConstruct *,
-      const parser::ForallConstruct *, const parser::CompilerDirective *,
-      const parser::OpenMPConstruct *, const parser::OmpEndLoopDirective *,
+      const Fortran::parser::AssociateConstruct *,
+      const Fortran::parser::BlockConstruct *,
+      const Fortran::parser::CaseConstruct *,
+      const Fortran::parser::ChangeTeamConstruct *,
+      const Fortran::parser::CriticalConstruct *,
+      const Fortran::parser::DoConstruct *,
+      const Fortran::parser::IfConstruct *,
+      const Fortran::parser::SelectRankConstruct *,
+      const Fortran::parser::SelectTypeConstruct *,
+      const Fortran::parser::WhereConstruct *,
+      const Fortran::parser::ForallConstruct *,
+      const Fortran::parser::CompilerDirective *,
+      const Fortran::parser::OpenMPConstruct *,
+      const Fortran::parser::OmpEndLoopDirective *,
       // construct statements
-      const parser::AssociateStmt *, const parser::EndAssociateStmt *,
-      const parser::BlockStmt *, const parser::EndBlockStmt *,
-      const parser::SelectCaseStmt *, const parser::CaseStmt *,
-      const parser::EndSelectStmt *, const parser::ChangeTeamStmt *,
-      const parser::EndChangeTeamStmt *, const parser::CriticalStmt *,
-      const parser::EndCriticalStmt *, const parser::NonLabelDoStmt *,
-      const parser::EndDoStmt *, const parser::IfThenStmt *,
-      const parser::ElseIfStmt *, const parser::ElseStmt *,
-      const parser::EndIfStmt *, const parser::SelectRankStmt *,
-      const parser::SelectRankCaseStmt *, const parser::SelectTypeStmt *,
-      const parser::TypeGuardStmt *, const parser::WhereConstructStmt *,
-      const parser::MaskedElsewhereStmt *, const parser::ElsewhereStmt *,
-      const parser::EndWhereStmt *, const parser::ForallConstructStmt *,
-      const parser::EndForallStmt *>;
+      const Fortran::parser::AssociateStmt *,
+      const Fortran::parser::EndAssociateStmt *,
+      const Fortran::parser::BlockStmt *, const Fortran::parser::EndBlockStmt *,
+      const Fortran::parser::SelectCaseStmt *,
+      const Fortran::parser::CaseStmt *, const Fortran::parser::EndSelectStmt *,
+      const Fortran::parser::ChangeTeamStmt *,
+      const Fortran::parser::EndChangeTeamStmt *,
+      const Fortran::parser::CriticalStmt *,
+      const Fortran::parser::EndCriticalStmt *,
+      const Fortran::parser::NonLabelDoStmt *,
+      const Fortran::parser::EndDoStmt *, const Fortran::parser::IfThenStmt *,
+      const Fortran::parser::ElseIfStmt *, const Fortran::parser::ElseStmt *,
+      const Fortran::parser::EndIfStmt *,
+      const Fortran::parser::SelectRankStmt *,
+      const Fortran::parser::SelectRankCaseStmt *,
+      const Fortran::parser::SelectTypeStmt *,
+      const Fortran::parser::TypeGuardStmt *,
+      const Fortran::parser::WhereConstructStmt *,
+      const Fortran::parser::MaskedElsewhereStmt *,
+      const Fortran::parser::ElsewhereStmt *,
+      const Fortran::parser::EndWhereStmt *,
+      const Fortran::parser::ForallConstructStmt *,
+      const Fortran::parser::EndForallStmt *>;
 
   Evaluation() = delete;
   Evaluation(const Evaluation &) = default;
 
   /// General ctor
   template <typename A>
-  Evaluation(const A &a, const ParentType &p, const parser::CharBlock &pos,
-             const std::optional<parser::Label> &lab)
+  Evaluation(const A &a, const ParentType &p,
+             const Fortran::parser::CharBlock &pos,
+             const std::optional<Fortran::parser::Label> &lab)
       : u{&a}, parent{p}, pos{pos}, lab{lab} {}
 
   /// Compiler-generated jump
@@ -155,10 +185,10 @@ struct Evaluation {
   /// is `A` not an executable statement?
   template <typename A>
   constexpr static bool isOther(const A &) {
-    return std::is_same_v<A, parser::FormatStmt> ||
-           std::is_same_v<A, parser::EntryStmt> ||
-           std::is_same_v<A, parser::DataStmt> ||
-           std::is_same_v<A, parser::NamelistStmt>;
+    return std::is_same_v<A, Fortran::parser::FormatStmt> ||
+           std::is_same_v<A, Fortran::parser::EntryStmt> ||
+           std::is_same_v<A, Fortran::parser::DataStmt> ||
+           std::is_same_v<A, Fortran::parser::NamelistStmt>;
   }
 
   constexpr bool isActionStmt() const {
@@ -194,22 +224,21 @@ struct Evaluation {
   /// control flow
   void setBranches() { containsBranches = true; }
 
-  constexpr std::list<Evaluation> *getConstructEvals() {
+  constexpr EvaluationCollection *getConstructEvals() {
     return isStmt() ? nullptr : subs;
   }
 
   /// Set that the construct `cstr` (if not a nullptr) has branches.
   static void setBranches(Evaluation *cstr) {
-    if (cstr) {
+    if (cstr)
       cstr->setBranches();
-    }
   }
 
   EvalVariant u;
   ParentType parent;
-  parser::CharBlock pos;
-  std::optional<parser::Label> lab;
-  std::list<Evaluation> *subs{nullptr}; // construct sub-statements
+  Fortran::parser::CharBlock pos;
+  std::optional<Fortran::parser::Label> lab;
+  EvaluationCollection *subs; // construct sub-statements
   CFGAnnotation cfg{CFGAnnotation::None};
   bool isTarget{false};         // this evaluation is a control target
   bool containsBranches{false}; // construct contains branches
@@ -221,11 +250,13 @@ struct ProgramUnit {
   template <typename A>
   ProgramUnit(A *ptr, const ParentType &parent) : p{ptr}, parent{parent} {}
 
-  std::variant<const parser::MainProgram *, const parser::FunctionSubprogram *,
-               const parser::SubroutineSubprogram *, const parser::Module *,
-               const parser::Submodule *,
-               const parser::SeparateModuleSubprogram *,
-               const parser::BlockData *>
+  std::variant<const Fortran::parser::MainProgram *,
+               const Fortran::parser::FunctionSubprogram *,
+               const Fortran::parser::SubroutineSubprogram *,
+               const Fortran::parser::Module *,
+               const Fortran::parser::Submodule *,
+               const Fortran::parser::SeparateModuleSubprogram *,
+               const Fortran::parser::BlockData *>
       p;
   ParentType parent;
 };
@@ -234,49 +265,51 @@ struct ProgramUnit {
 /// statements.
 struct FunctionLikeUnit : public ProgramUnit {
   // wrapper statements for function-like syntactic structures
-  using FunctionStatement =
-      std::variant<const parser::Statement<parser::ProgramStmt> *,
-                   const parser::Statement<parser::EndProgramStmt> *,
-                   const parser::Statement<parser::FunctionStmt> *,
-                   const parser::Statement<parser::EndFunctionStmt> *,
-                   const parser::Statement<parser::SubroutineStmt> *,
-                   const parser::Statement<parser::EndSubroutineStmt> *,
-                   const parser::Statement<parser::MpSubprogramStmt> *,
-                   const parser::Statement<parser::EndMpSubprogramStmt> *>;
+  using FunctionStatement = std::variant<
+      const Fortran::parser::Statement<Fortran::parser::ProgramStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndProgramStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::FunctionStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndFunctionStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::SubroutineStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndSubroutineStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::MpSubprogramStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndMpSubprogramStmt> *>;
 
-  FunctionLikeUnit(const parser::MainProgram &f, const ParentType &parent);
-  FunctionLikeUnit(const parser::FunctionSubprogram &f,
+  FunctionLikeUnit(const Fortran::parser::MainProgram &f,
                    const ParentType &parent);
-  FunctionLikeUnit(const parser::SubroutineSubprogram &f,
+  FunctionLikeUnit(const Fortran::parser::FunctionSubprogram &f,
                    const ParentType &parent);
-  FunctionLikeUnit(const parser::SeparateModuleSubprogram &f,
+  FunctionLikeUnit(const Fortran::parser::SubroutineSubprogram &f,
+                   const ParentType &parent);
+  FunctionLikeUnit(const Fortran::parser::SeparateModuleSubprogram &f,
                    const ParentType &parent);
 
   bool isMainProgram() {
-    return std::get_if<const parser::Statement<parser::EndProgramStmt> *>(
-        &funStmts.back());
+    return std::holds_alternative<
+        const Fortran::parser::Statement<Fortran::parser::EndProgramStmt> *>(
+        funStmts.back());
   }
-  const parser::FunctionStmt *isFunction() {
-    return isA<parser::FunctionStmt>();
+  const Fortran::parser::FunctionStmt *getFunction() {
+    return getA<Fortran::parser::FunctionStmt>();
   }
-  const parser::SubroutineStmt *isSubroutine() {
-    return isA<parser::SubroutineStmt>();
+  const Fortran::parser::SubroutineStmt *getSubroutine() {
+    return getA<Fortran::parser::SubroutineStmt>();
   }
-  const parser::MpSubprogramStmt *isMPSubp() {
-    return isA<parser::MpSubprogramStmt>();
+  const Fortran::parser::MpSubprogramStmt *getMPSubp() {
+    return getA<Fortran::parser::MpSubprogramStmt>();
   }
 
   const semantics::Scope *scope{nullptr}; // scope from front-end
   std::list<FunctionStatement> funStmts;  // begin/end pair
-  std::list<Evaluation> evals;            // statements
+  EvaluationCollection evals;             // statements
   std::list<FunctionLikeUnit> funcs;      // internal procedures
 
 private:
   template <typename A>
-  const A *isA() {
-    if (auto p = std::get_if<const parser::Statement<A> *>(&funStmts.front())) {
+  const A *getA() {
+    if (auto p = std::get_if<const Fortran::parser::Statement<A> *>(
+            &funStmts.front()))
       return &(*p)->statement;
-    }
     return nullptr;
   }
 };
@@ -285,14 +318,14 @@ private:
 /// function-like units.
 struct ModuleLikeUnit : public ProgramUnit {
   // wrapper statements for module-like syntactic structures
-  using ModuleStatement =
-      std::variant<const parser::Statement<parser::ModuleStmt> *,
-                   const parser::Statement<parser::EndModuleStmt> *,
-                   const parser::Statement<parser::SubmoduleStmt> *,
-                   const parser::Statement<parser::EndSubmoduleStmt> *>;
+  using ModuleStatement = std::variant<
+      const Fortran::parser::Statement<Fortran::parser::ModuleStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndModuleStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::SubmoduleStmt> *,
+      const Fortran::parser::Statement<Fortran::parser::EndSubmoduleStmt> *>;
 
-  ModuleLikeUnit(const parser::Module &m, const ParentType &parent);
-  ModuleLikeUnit(const parser::Submodule &m, const ParentType &parent);
+  ModuleLikeUnit(const Fortran::parser::Module &m, const ParentType &parent);
+  ModuleLikeUnit(const Fortran::parser::Submodule &m, const ParentType &parent);
   ~ModuleLikeUnit() = default;
 
   const semantics::Scope *scope{nullptr};
@@ -301,7 +334,7 @@ struct ModuleLikeUnit : public ProgramUnit {
 };
 
 struct BlockDataUnit : public ProgramUnit {
-  BlockDataUnit(const parser::BlockData &bd, const ParentType &parent);
+  BlockDataUnit(const Fortran::parser::BlockData &bd, const ParentType &parent);
 };
 
 /// A Program is the top-level AST
@@ -317,7 +350,7 @@ private:
 } // namespace AST
 
 /// Create an AST from the parse tree
-AST::Program *createAST(const parser::Program &root);
+AST::Program *createAST(const Fortran::parser::Program &root);
 
 /// Decorate the AST with control flow annotations
 ///
