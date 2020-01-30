@@ -23,6 +23,7 @@
 /// are either statements or constructs, where a construct contains a list of
 /// evaluations.  The resulting AST structure can then be used to create FIR.
 
+namespace Fortran::lower {
 namespace {
 
 /// The instantiation of a parse tree visitor (Pre and Post) is extremely
@@ -30,12 +31,10 @@ namespace {
 /// the bridge to one such instantiation.
 class ASTBuilder {
 public:
-  ASTBuilder() : pgm{new Fortran::lower::AST::Program}, parents{pgm.get()} {}
+  ASTBuilder() : pgm{new AST::Program}, parents{pgm.get()} {}
 
   /// Get the result
-  std::unique_ptr<Fortran::lower::AST::Program> result() {
-    return std::move(pgm);
-  }
+  std::unique_ptr<AST::Program> result() { return std::move(pgm); }
 
   template <typename A>
   constexpr bool Pre(const A &) {
@@ -46,46 +45,40 @@ public:
 
   // Module like
 
-  bool Pre(const Fortran::parser::Module &node) { return enterModule(node); }
-  bool Pre(const Fortran::parser::Submodule &node) { return enterModule(node); }
+  bool Pre(const parser::Module &node) { return enterModule(node); }
+  bool Pre(const parser::Submodule &node) { return enterModule(node); }
 
-  void Post(const Fortran::parser::Module &) { exitModule(); }
-  void Post(const Fortran::parser::Submodule &) { exitModule(); }
+  void Post(const parser::Module &) { exitModule(); }
+  void Post(const parser::Submodule &) { exitModule(); }
 
   // Function like
 
-  bool Pre(const Fortran::parser::MainProgram &node) { return enterFunc(node); }
-  bool Pre(const Fortran::parser::FunctionSubprogram &node) {
-    return enterFunc(node);
-  }
-  bool Pre(const Fortran::parser::SubroutineSubprogram &node) {
-    return enterFunc(node);
-  }
-  bool Pre(const Fortran::parser::SeparateModuleSubprogram &node) {
+  bool Pre(const parser::MainProgram &node) { return enterFunc(node); }
+  bool Pre(const parser::FunctionSubprogram &node) { return enterFunc(node); }
+  bool Pre(const parser::SubroutineSubprogram &node) { return enterFunc(node); }
+  bool Pre(const parser::SeparateModuleSubprogram &node) {
     return enterFunc(node);
   }
 
-  void Post(const Fortran::parser::MainProgram &) { exitFunc(); }
-  void Post(const Fortran::parser::FunctionSubprogram &) { exitFunc(); }
-  void Post(const Fortran::parser::SubroutineSubprogram &) { exitFunc(); }
-  void Post(const Fortran::parser::SeparateModuleSubprogram &) { exitFunc(); }
+  void Post(const parser::MainProgram &) { exitFunc(); }
+  void Post(const parser::FunctionSubprogram &) { exitFunc(); }
+  void Post(const parser::SubroutineSubprogram &) { exitFunc(); }
+  void Post(const parser::SeparateModuleSubprogram &) { exitFunc(); }
 
   // Block data
 
-  void Post(const Fortran::parser::BlockData &node) {
-    addUnit(Fortran::lower::AST::BlockDataUnit{node, parents.back()});
+  void Post(const parser::BlockData &node) {
+    addUnit(AST::BlockDataUnit{node, parents.back()});
   }
 
   //
   // Action statements
   //
 
-  void Post(const Fortran::parser::Statement<Fortran::parser::ActionStmt> &s) {
+  void Post(const parser::Statement<parser::ActionStmt> &s) {
     addEval(makeEvalAction(s));
   }
-  void
-  Post(const Fortran::parser::UnlabeledStatement<Fortran::parser::ActionStmt>
-           &s) {
+  void Post(const parser::UnlabeledStatement<parser::ActionStmt> &s) {
     addEval(makeEvalAction(s));
   }
 
@@ -93,23 +86,20 @@ public:
   // Non-executable statements
   //
 
-  void
-  Post(const Fortran::parser::Statement<
-       Fortran::common::Indirection<Fortran::parser::FormatStmt>> &statement) {
+  void Post(const parser::Statement<common::Indirection<parser::FormatStmt>>
+                &statement) {
     addEval(makeEvalIndirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<
-       Fortran::common::Indirection<Fortran::parser::EntryStmt>> &statement) {
+  void Post(const parser::Statement<common::Indirection<parser::EntryStmt>>
+                &statement) {
     addEval(makeEvalIndirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<
-       Fortran::common::Indirection<Fortran::parser::DataStmt>> &statement) {
+  void Post(const parser::Statement<common::Indirection<parser::DataStmt>>
+                &statement) {
     addEval(makeEvalIndirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::common::Indirection<
-                Fortran::parser::NamelistStmt>> &statement) {
+  void Post(const parser::Statement<common::Indirection<parser::NamelistStmt>>
+                &statement) {
     addEval(makeEvalIndirect(statement));
   }
 
@@ -117,135 +107,101 @@ public:
   // Construct statements
   //
 
-  void Post(const Fortran::parser::Statement<Fortran::parser::AssociateStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::AssociateStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndAssociateStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndAssociateStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(
-      const Fortran::parser::Statement<Fortran::parser::BlockStmt> &statement) {
+  void Post(const parser::Statement<parser::BlockStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndBlockStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndBlockStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::SelectCaseStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::SelectCaseStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::CaseStmt> &statement) {
+  void Post(const parser::Statement<parser::CaseStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndSelectStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndSelectStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::ChangeTeamStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::ChangeTeamStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndChangeTeamStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndChangeTeamStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::CriticalStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::CriticalStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndCriticalStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndCriticalStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::NonLabelDoStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::NonLabelDoStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(
-      const Fortran::parser::Statement<Fortran::parser::EndDoStmt> &statement) {
+  void Post(const parser::Statement<parser::EndDoStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::IfThenStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::IfThenStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::ElseIfStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::ElseIfStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::ElseStmt> &statement) {
+  void Post(const parser::Statement<parser::ElseStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(
-      const Fortran::parser::Statement<Fortran::parser::EndIfStmt> &statement) {
+  void Post(const parser::Statement<parser::EndIfStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::SelectRankStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::SelectRankStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::SelectRankCaseStmt>
-           &statement) {
+  void Post(const parser::Statement<parser::SelectRankCaseStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::SelectTypeStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::SelectTypeStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::TypeGuardStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::TypeGuardStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::WhereConstructStmt>
-           &statement) {
+  void Post(const parser::Statement<parser::WhereConstructStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::MaskedElsewhereStmt>
-           &statement) {
+  void Post(const parser::Statement<parser::MaskedElsewhereStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::ElsewhereStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::ElsewhereStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndWhereStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndWhereStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::ForallConstructStmt>
-           &statement) {
+  void Post(const parser::Statement<parser::ForallConstructStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
-  void Post(const Fortran::parser::Statement<Fortran::parser::EndForallStmt>
-                &statement) {
+  void Post(const parser::Statement<parser::EndForallStmt> &statement) {
     addEval(makeEvalDirect(statement));
   }
   // Get rid of production wrapper
-  void Post(const Fortran::parser::UnlabeledStatement<
-            Fortran::parser::ForallAssignmentStmt> &statement) {
+  void Post(const parser::UnlabeledStatement<parser::ForallAssignmentStmt>
+                &statement) {
     addEval(std::visit(
         [&](const auto &x) {
-          return Fortran::lower::AST::Evaluation{
-              x, parents.back(), statement.source, {}};
+          return AST::Evaluation{x, parents.back(), statement.source, {}};
         },
         statement.statement.u));
   }
-  void
-  Post(const Fortran::parser::Statement<Fortran::parser::ForallAssignmentStmt>
-           &statement) {
+  void Post(const parser::Statement<parser::ForallAssignmentStmt> &statement) {
     addEval(std::visit(
         [&](const auto &x) {
-          return Fortran::lower::AST::Evaluation{
-              x, parents.back(), statement.source, statement.label};
+          return AST::Evaluation{x, parents.back(), statement.source,
+                                 statement.label};
         },
         statement.statement.u));
   }
@@ -254,103 +210,99 @@ public:
   // Constructs (enter and exit)
   //
 
-  bool Pre(const Fortran::parser::AssociateConstruct &construct) {
+  bool Pre(const parser::AssociateConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::BlockConstruct &construct) {
+  bool Pre(const parser::BlockConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::CaseConstruct &construct) {
+  bool Pre(const parser::CaseConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::ChangeTeamConstruct &construct) {
+  bool Pre(const parser::ChangeTeamConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::CriticalConstruct &construct) {
+  bool Pre(const parser::CriticalConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::DoConstruct &construct) {
+  bool Pre(const parser::DoConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::IfConstruct &construct) {
+  bool Pre(const parser::IfConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::SelectRankConstruct &construct) {
+  bool Pre(const parser::SelectRankConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::SelectTypeConstruct &construct) {
+  bool Pre(const parser::SelectTypeConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::WhereConstruct &construct) {
+  bool Pre(const parser::WhereConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::ForallConstruct &construct) {
+  bool Pre(const parser::ForallConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::CompilerDirective &construct) {
+  bool Pre(const parser::CompilerDirective &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::OpenMPConstruct &construct) {
+  bool Pre(const parser::OpenMPConstruct &construct) {
     return enterConstruct(construct);
   }
-  bool Pre(const Fortran::parser::OmpEndLoopDirective &construct) {
+  bool Pre(const parser::OmpEndLoopDirective &construct) {
     return enterConstruct(construct);
   }
 
-  void Post(const Fortran::parser::AssociateConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::BlockConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::CaseConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::ChangeTeamConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::CriticalConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::DoConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::IfConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::SelectRankConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::SelectTypeConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::WhereConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::ForallConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::CompilerDirective &) { exitConstruct(); }
-  void Post(const Fortran::parser::OpenMPConstruct &) { exitConstruct(); }
-  void Post(const Fortran::parser::OmpEndLoopDirective &) { exitConstruct(); }
+  void Post(const parser::AssociateConstruct &) { exitConstruct(); }
+  void Post(const parser::BlockConstruct &) { exitConstruct(); }
+  void Post(const parser::CaseConstruct &) { exitConstruct(); }
+  void Post(const parser::ChangeTeamConstruct &) { exitConstruct(); }
+  void Post(const parser::CriticalConstruct &) { exitConstruct(); }
+  void Post(const parser::DoConstruct &) { exitConstruct(); }
+  void Post(const parser::IfConstruct &) { exitConstruct(); }
+  void Post(const parser::SelectRankConstruct &) { exitConstruct(); }
+  void Post(const parser::SelectTypeConstruct &) { exitConstruct(); }
+  void Post(const parser::WhereConstruct &) { exitConstruct(); }
+  void Post(const parser::ForallConstruct &) { exitConstruct(); }
+  void Post(const parser::CompilerDirective &) { exitConstruct(); }
+  void Post(const parser::OpenMPConstruct &) { exitConstruct(); }
+  void Post(const parser::OmpEndLoopDirective &) { exitConstruct(); }
 
 private:
   // ActionStmt has a couple of non-conforming cases, which get handled
   // explicitly here.  The other cases use an Indirection, which we discard in
   // the AST.
-  Fortran::lower::AST::Evaluation
-  makeEvalAction(const Fortran::parser::Statement<Fortran::parser::ActionStmt>
-                     &statement) {
+  AST::Evaluation
+  makeEvalAction(const parser::Statement<parser::ActionStmt> &statement) {
     return std::visit(
-        Fortran::common::visitors{
-            [&](const Fortran::parser::ContinueStmt &x) {
-              return Fortran::lower::AST::Evaluation{
-                  x, parents.back(), statement.source, statement.label};
+        common::visitors{
+            [&](const parser::ContinueStmt &x) {
+              return AST::Evaluation{x, parents.back(), statement.source,
+                                     statement.label};
             },
-            [&](const Fortran::parser::FailImageStmt &x) {
-              return Fortran::lower::AST::Evaluation{
-                  x, parents.back(), statement.source, statement.label};
+            [&](const parser::FailImageStmt &x) {
+              return AST::Evaluation{x, parents.back(), statement.source,
+                                     statement.label};
             },
             [&](const auto &x) {
-              return Fortran::lower::AST::Evaluation{
-                  x.value(), parents.back(), statement.source, statement.label};
+              return AST::Evaluation{x.value(), parents.back(),
+                                     statement.source, statement.label};
             },
         },
         statement.statement.u);
   }
-  Fortran::lower::AST::Evaluation makeEvalAction(
-      const Fortran::parser::UnlabeledStatement<Fortran::parser::ActionStmt>
-          &statement) {
+  AST::Evaluation makeEvalAction(
+      const parser::UnlabeledStatement<parser::ActionStmt> &statement) {
     return std::visit(
-        Fortran::common::visitors{
-            [&](const Fortran::parser::ContinueStmt &x) {
-              return Fortran::lower::AST::Evaluation{
-                  x, parents.back(), statement.source, {}};
+        common::visitors{
+            [&](const parser::ContinueStmt &x) {
+              return AST::Evaluation{x, parents.back(), statement.source, {}};
             },
-            [&](const Fortran::parser::FailImageStmt &x) {
-              return Fortran::lower::AST::Evaluation{
-                  x, parents.back(), statement.source, {}};
+            [&](const parser::FailImageStmt &x) {
+              return AST::Evaluation{x, parents.back(), statement.source, {}};
             },
             [&](const auto &x) {
-              return Fortran::lower::AST::Evaluation{
+              return AST::Evaluation{
                   x.value(), parents.back(), statement.source, {}};
             },
         },
@@ -358,27 +310,23 @@ private:
   }
 
   template <typename A>
-  Fortran::lower::AST::Evaluation makeEvalIndirect(
-      const Fortran::parser::Statement<Fortran::common::Indirection<A>>
-          &statement) {
-    return Fortran::lower::AST::Evaluation{statement.statement.value(),
-                                           parents.back(), statement.source,
-                                           statement.label};
+  AST::Evaluation
+  makeEvalIndirect(const parser::Statement<common::Indirection<A>> &statement) {
+    return AST::Evaluation{statement.statement.value(), parents.back(),
+                           statement.source, statement.label};
   }
 
   template <typename A>
-  Fortran::lower::AST::Evaluation
-  makeEvalDirect(const Fortran::parser::Statement<A> &statement) {
-    return Fortran::lower::AST::Evaluation{statement.statement, parents.back(),
-                                           statement.source, statement.label};
+  AST::Evaluation makeEvalDirect(const parser::Statement<A> &statement) {
+    return AST::Evaluation{statement.statement, parents.back(),
+                           statement.source, statement.label};
   }
 
   // When we enter a function-like structure, we want to build a new unit and
   // set the builder's cursors to point to it.
   template <typename A>
   bool enterFunc(const A &func) {
-    auto &unit =
-        addFunc(Fortran::lower::AST::FunctionLikeUnit{func, parents.back()});
+    auto &unit = addFunc(AST::FunctionLikeUnit{func, parents.back()});
     funclist = &unit.funcs;
     pushEval(&unit.evals);
     parents.emplace_back(&unit);
@@ -395,9 +343,8 @@ private:
   // set the builder's evaluation cursor to point to it.
   template <typename A>
   bool enterConstruct(const A &construct) {
-    auto &con =
-        addEval(Fortran::lower::AST::Evaluation{construct, parents.back()});
-    con.subs.reset(new Fortran::lower::AST::EvaluationCollection);
+    auto &con = addEval(AST::Evaluation{construct, parents.back()});
+    con.subs.reset(new AST::EvaluationCollection);
     pushEval(con.subs.get());
     parents.emplace_back(&con);
     return true;
@@ -412,8 +359,7 @@ private:
   // set the builder's function cursor to point to it.
   template <typename A>
   bool enterModule(const A &func) {
-    auto &unit =
-        addUnit(Fortran::lower::AST::ModuleLikeUnit{func, parents.back()});
+    auto &unit = addUnit(AST::ModuleLikeUnit{func, parents.back()});
     funclist = &unit.funcs;
     parents.emplace_back(&unit);
     return true;
@@ -440,8 +386,7 @@ private:
   }
 
   /// move the Evaluation to the end of the current list
-  Fortran::lower::AST::Evaluation &
-  addEval(Fortran::lower::AST::Evaluation &&eval) {
+  AST::Evaluation &addEval(AST::Evaluation &&eval) {
     assert(funclist && "not in a function");
     assert(evallist.size() > 0);
     evallist.back()->emplace_back(std::move(eval));
@@ -449,7 +394,7 @@ private:
   }
 
   /// push a new list on the stack of Evaluation lists
-  void pushEval(Fortran::lower::AST::EvaluationCollection *eval) {
+  void pushEval(AST::EvaluationCollection *eval) {
     assert(funclist && "not in a function");
     assert(eval && eval->empty() && "evaluation list isn't correct");
     evallist.emplace_back(eval);
@@ -461,34 +406,33 @@ private:
     evallist.pop_back();
   }
 
-  std::unique_ptr<Fortran::lower::AST::Program> pgm;
-  std::list<Fortran::lower::AST::FunctionLikeUnit> *funclist{nullptr};
-  std::vector<Fortran::lower::AST::EvaluationCollection *> evallist;
-  std::vector<Fortran::lower::AST::ParentType> parents;
+  std::unique_ptr<AST::Program> pgm;
+  std::list<AST::FunctionLikeUnit> *funclist{nullptr};
+  std::vector<AST::EvaluationCollection *> evallist;
+  std::vector<AST::ParentType> parents;
 };
 
 template <typename A>
 constexpr bool hasErrLabel(const A &stmt) {
   auto isError{[](const auto &v) {
-    return std::holds_alternative<Fortran::parser::ErrLabel>(v.u);
+    return std::holds_alternative<parser::ErrLabel>(v.u);
   }};
-  if constexpr (std::is_same_v<A, Fortran::parser::ReadStmt> ||
-                std::is_same_v<A, Fortran::parser::WriteStmt>) {
+  if constexpr (std::is_same_v<A, parser::ReadStmt> ||
+                std::is_same_v<A, parser::WriteStmt>) {
     return std::any_of(std::begin(stmt.controls), std::end(stmt.controls),
                        isError);
   }
-  if constexpr (std::is_same_v<A, Fortran::parser::WaitStmt> ||
-                std::is_same_v<A, Fortran::parser::OpenStmt> ||
-                std::is_same_v<A, Fortran::parser::CloseStmt> ||
-                std::is_same_v<A, Fortran::parser::BackspaceStmt> ||
-                std::is_same_v<A, Fortran::parser::EndfileStmt> ||
-                std::is_same_v<A, Fortran::parser::RewindStmt> ||
-                std::is_same_v<A, Fortran::parser::FlushStmt>) {
+  if constexpr (std::is_same_v<A, parser::WaitStmt> ||
+                std::is_same_v<A, parser::OpenStmt> ||
+                std::is_same_v<A, parser::CloseStmt> ||
+                std::is_same_v<A, parser::BackspaceStmt> ||
+                std::is_same_v<A, parser::EndfileStmt> ||
+                std::is_same_v<A, parser::RewindStmt> ||
+                std::is_same_v<A, parser::FlushStmt>) {
     return std::any_of(std::begin(stmt.v), std::end(stmt.v), isError);
   }
-  if constexpr (std::is_same_v<A, Fortran::parser::InquireStmt>) {
-    const auto &specifiers{
-        std::get<std::list<Fortran::parser::InquireSpec>>(stmt.u)};
+  if constexpr (std::is_same_v<A, parser::InquireStmt>) {
+    const auto &specifiers{std::get<std::list<parser::InquireSpec>>(stmt.u)};
     return std::any_of(std::begin(specifiers), std::end(specifiers), isError);
   }
   return false;
@@ -496,16 +440,16 @@ constexpr bool hasErrLabel(const A &stmt) {
 
 template <typename A>
 constexpr bool hasEorLabel(const A &stmt) {
-  if constexpr (std::is_same_v<A, Fortran::parser::ReadStmt> ||
-                std::is_same_v<A, Fortran::parser::WriteStmt>) {
+  if constexpr (std::is_same_v<A, parser::ReadStmt> ||
+                std::is_same_v<A, parser::WriteStmt>) {
     for (const auto &control : stmt.controls) {
-      if (std::holds_alternative<Fortran::parser::EorLabel>(control.u))
+      if (std::holds_alternative<parser::EorLabel>(control.u))
         return true;
     }
   }
-  if constexpr (std::is_same_v<A, Fortran::parser::WaitStmt>) {
+  if constexpr (std::is_same_v<A, parser::WaitStmt>) {
     for (const auto &waitSpec : stmt.v) {
-      if (std::holds_alternative<Fortran::parser::EorLabel>(waitSpec.u))
+      if (std::holds_alternative<parser::EorLabel>(waitSpec.u))
         return true;
     }
   }
@@ -514,28 +458,27 @@ constexpr bool hasEorLabel(const A &stmt) {
 
 template <typename A>
 constexpr bool hasEndLabel(const A &stmt) {
-  if constexpr (std::is_same_v<A, Fortran::parser::ReadStmt> ||
-                std::is_same_v<A, Fortran::parser::WriteStmt>) {
+  if constexpr (std::is_same_v<A, parser::ReadStmt> ||
+                std::is_same_v<A, parser::WriteStmt>) {
     for (const auto &control : stmt.controls) {
-      if (std::holds_alternative<Fortran::parser::EndLabel>(control.u))
+      if (std::holds_alternative<parser::EndLabel>(control.u))
         return true;
     }
   }
-  if constexpr (std::is_same_v<A, Fortran::parser::WaitStmt>) {
+  if constexpr (std::is_same_v<A, parser::WaitStmt>) {
     for (const auto &waitSpec : stmt.v) {
-      if (std::holds_alternative<Fortran::parser::EndLabel>(waitSpec.u))
+      if (std::holds_alternative<parser::EndLabel>(waitSpec.u))
         return true;
     }
   }
   return false;
 }
 
-bool hasAltReturns(const Fortran::parser::CallStmt &callStmt) {
-  const auto &args{
-      std::get<std::list<Fortran::parser::ActualArgSpec>>(callStmt.v.t)};
+bool hasAltReturns(const parser::CallStmt &callStmt) {
+  const auto &args{std::get<std::list<parser::ActualArgSpec>>(callStmt.v.t)};
   for (const auto &arg : args) {
-    const auto &actual{std::get<Fortran::parser::ActualArg>(arg.t)};
-    if (std::holds_alternative<Fortran::parser::AltReturnSpec>(actual.u))
+    const auto &actual{std::get<parser::ActualArg>(arg.t)};
+    if (std::holds_alternative<parser::AltReturnSpec>(actual.u))
       return true;
   }
   return false;
@@ -543,24 +486,22 @@ bool hasAltReturns(const Fortran::parser::CallStmt &callStmt) {
 
 /// Determine if `callStmt` has alternate returns and if so set `e` to be the
 /// origin of a switch-like control flow
-void altRet(Fortran::lower::AST::Evaluation &evaluation,
-            const Fortran::parser::CallStmt *callStmt,
-            Fortran::lower::AST::Evaluation *cstr) {
+void altRet(AST::Evaluation &evaluation, const parser::CallStmt *callStmt,
+            AST::Evaluation *cstr) {
   if (hasAltReturns(*callStmt))
-    evaluation.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
+    evaluation.setCFG(AST::CFGAnnotation::Switch, cstr);
 }
 
 template <typename A>
-void ioLabel(Fortran::lower::AST::Evaluation &evaluation, const A *statement,
-             Fortran::lower::AST::Evaluation *cstr) {
+void ioLabel(AST::Evaluation &evaluation, const A *statement,
+             AST::Evaluation *cstr) {
   if (hasErrLabel(*statement) || hasEorLabel(*statement) ||
       hasEndLabel(*statement))
-    evaluation.setCFG(Fortran::lower::AST::CFGAnnotation::IoSwitch, cstr);
+    evaluation.setCFG(AST::CFGAnnotation::IoSwitch, cstr);
 }
 
-void annotateEvalListCFG(
-    Fortran::lower::AST::EvaluationCollection &evaluationCollection,
-    Fortran::lower::AST::Evaluation *cstr) {
+void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
+                         AST::Evaluation *cstr) {
   bool nextIsTarget = false;
   for (auto &eval : evaluationCollection) {
     eval.isTarget = nextIsTarget;
@@ -573,155 +514,133 @@ void annotateEvalListCFG(
     if (eval.isActionOrGenerated() && eval.lab.has_value())
       eval.isTarget = true;
     std::visit(
-        Fortran::common::visitors{
-            [&](const Fortran::parser::BackspaceStmt *statement) {
+        common::visitors{
+            [&](const parser::BackspaceStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::CallStmt *statement) {
+            [&](const parser::CallStmt *statement) {
               altRet(eval, statement, cstr);
             },
-            [&](const Fortran::parser::CloseStmt *statement) {
+            [&](const parser::CloseStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::CycleStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Goto, cstr);
+            [&](const parser::CycleStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
             },
-            [&](const Fortran::parser::EndfileStmt *statement) {
+            [&](const parser::EndfileStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::ExitStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Goto, cstr);
+            [&](const parser::ExitStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
             },
-            [&](const Fortran::parser::FailImageStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Terminate, cstr);
+            [&](const parser::FailImageStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
             },
-            [&](const Fortran::parser::FlushStmt *statement) {
+            [&](const parser::FlushStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::GotoStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Goto, cstr);
+            [&](const parser::GotoStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
             },
-            [&](const Fortran::parser::IfStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::CondGoto, cstr);
+            [&](const parser::IfStmt *) {
+              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
             },
-            [&](const Fortran::parser::InquireStmt *statement) {
+            [&](const parser::InquireStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::OpenStmt *statement) {
+            [&](const parser::OpenStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::ReadStmt *statement) {
+            [&](const parser::ReadStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::ReturnStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Return, cstr);
+            [&](const parser::ReturnStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Return, cstr);
             },
-            [&](const Fortran::parser::RewindStmt *statement) {
+            [&](const parser::RewindStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::StopStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Terminate, cstr);
+            [&](const parser::StopStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
             },
-            [&](const Fortran::parser::WaitStmt *statement) {
+            [&](const parser::WaitStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::WriteStmt *statement) {
+            [&](const parser::WriteStmt *statement) {
               ioLabel(eval, statement, cstr);
             },
-            [&](const Fortran::parser::ArithmeticIfStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
+            [&](const parser::ArithmeticIfStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
             },
-            [&](const Fortran::parser::AssignedGotoStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::IndGoto, cstr);
+            [&](const parser::AssignedGotoStmt *) {
+              eval.setCFG(AST::CFGAnnotation::IndGoto, cstr);
             },
-            [&](const Fortran::parser::ComputedGotoStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
+            [&](const parser::ComputedGotoStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
             },
-            [&](const Fortran::parser::WhereStmt *) {
+            [&](const parser::WhereStmt *) {
               // fir.loop + fir.where around the next stmt
               eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Iterative, cstr);
+              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
             },
-            [&](const Fortran::parser::ForallStmt *) {
+            [&](const parser::ForallStmt *) {
               // fir.loop around the next stmt
               eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Iterative, cstr);
+              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
             },
-            [&](Fortran::lower::AST::CGJump &) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Goto, cstr);
+            [&](AST::CGJump &) { eval.setCFG(AST::CFGAnnotation::Goto, cstr); },
+            [&](const parser::EndAssociateStmt *) { eval.isTarget = true; },
+            [&](const parser::EndBlockStmt *) { eval.isTarget = true; },
+            [&](const parser::SelectCaseStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
             },
-            [&](const Fortran::parser::EndAssociateStmt *) {
+            [&](const parser::CaseStmt *) { eval.isTarget = true; },
+            [&](const parser::EndSelectStmt *) { eval.isTarget = true; },
+            [&](const parser::EndChangeTeamStmt *) { eval.isTarget = true; },
+            [&](const parser::EndCriticalStmt *) { eval.isTarget = true; },
+            [&](const parser::NonLabelDoStmt *) {
               eval.isTarget = true;
+              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
             },
-            [&](const Fortran::parser::EndBlockStmt *) {
+            [&](const parser::EndDoStmt *) {
               eval.isTarget = true;
+              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
             },
-            [&](const Fortran::parser::SelectCaseStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
+            [&](const parser::IfThenStmt *) {
+              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
             },
-            [&](const Fortran::parser::CaseStmt *) { eval.isTarget = true; },
-            [&](const Fortran::parser::EndSelectStmt *) {
-              eval.isTarget = true;
+            [&](const parser::ElseIfStmt *) {
+              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
             },
-            [&](const Fortran::parser::EndChangeTeamStmt *) {
-              eval.isTarget = true;
+            [&](const parser::ElseStmt *) { eval.isTarget = true; },
+            [&](const parser::EndIfStmt *) { eval.isTarget = true; },
+            [&](const parser::SelectRankStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
             },
-            [&](const Fortran::parser::EndCriticalStmt *) {
-              eval.isTarget = true;
+            [&](const parser::SelectRankCaseStmt *) { eval.isTarget = true; },
+            [&](const parser::SelectTypeStmt *) {
+              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
             },
-            [&](const Fortran::parser::NonLabelDoStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const Fortran::parser::EndDoStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Goto, cstr);
-            },
-            [&](const Fortran::parser::IfThenStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const Fortran::parser::ElseIfStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const Fortran::parser::ElseStmt *) { eval.isTarget = true; },
-            [&](const Fortran::parser::EndIfStmt *) { eval.isTarget = true; },
-            [&](const Fortran::parser::SelectRankStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const Fortran::parser::SelectRankCaseStmt *) {
-              eval.isTarget = true;
-            },
-            [&](const Fortran::parser::SelectTypeStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const Fortran::parser::TypeGuardStmt *) {
-              eval.isTarget = true;
-            },
-            [&](const Fortran::parser::WhereConstruct *) {
+            [&](const parser::TypeGuardStmt *) { eval.isTarget = true; },
+            [&](const parser::WhereConstruct *) {
               // mark the WHERE as if it were a DO loop
               eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Iterative, cstr);
+              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
             },
-            [&](const Fortran::parser::WhereConstructStmt *) {
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::CondGoto, cstr);
+            [&](const parser::WhereConstructStmt *) {
+              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
             },
-            [&](const Fortran::parser::MaskedElsewhereStmt *) {
+            [&](const parser::MaskedElsewhereStmt *) {
               eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::CondGoto, cstr);
+              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
             },
-            [&](const Fortran::parser::ElsewhereStmt *) {
+            [&](const parser::ElsewhereStmt *) { eval.isTarget = true; },
+            [&](const parser::EndWhereStmt *) { eval.isTarget = true; },
+            [&](const parser::ForallConstructStmt *) {
               eval.isTarget = true;
+              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
             },
-            [&](const Fortran::parser::EndWhereStmt *) {
-              eval.isTarget = true;
-            },
-            [&](const Fortran::parser::ForallConstructStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(Fortran::lower::AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const Fortran::parser::EndForallStmt *) {
-              eval.isTarget = true;
-            },
+            [&](const parser::EndForallStmt *) { eval.isTarget = true; },
             [](const auto *) { /* do nothing */ },
         },
         eval.u);
@@ -730,30 +649,27 @@ void annotateEvalListCFG(
 
 /// Annotate the AST with CFG source decorations (see CFGAnnotation) and mark
 /// potential branch targets
-inline void
-annotateFuncCFG(Fortran::lower::AST::FunctionLikeUnit &functionLikeUnit) {
+inline void annotateFuncCFG(AST::FunctionLikeUnit &functionLikeUnit) {
   annotateEvalListCFG(functionLikeUnit.evals, nullptr);
 }
 
-llvm::StringRef evalName(Fortran::lower::AST::Evaluation &eval) {
+llvm::StringRef evalName(AST::Evaluation &eval) {
   return std::visit(
-      Fortran::common::visitors{
-          [](const Fortran::lower::AST::CGJump) { return "CGJump"; },
-          [](const auto *parseTreeNode) {
-            assert(parseTreeNode && "nullptr node in AST ");
-            return Fortran::parser::ParseTreeDumper::GetNodeName(
-                *parseTreeNode);
-          }},
+      common::visitors{[](const AST::CGJump) { return "CGJump"; },
+                       [](const auto *parseTreeNode) {
+                         assert(parseTreeNode && "nullptr node in AST ");
+                         return parser::ParseTreeDumper::GetNodeName(
+                             *parseTreeNode);
+                       }},
       eval.u);
 }
 
-void dumpEvalList(
-    llvm::raw_ostream &outputStream,
-    Fortran::lower::AST::EvaluationCollection &evaluationCollection,
-    int indent = 1) {
+void dumpEvalList(llvm::raw_ostream &outputStream,
+                  AST::EvaluationCollection &evaluationCollection,
+                  int indent = 1) {
   static const std::string white{"                                      ++"};
   std::string indentString{white.substr(0, indent * 2)};
-  for (Fortran::lower::AST::Evaluation &eval : evaluationCollection) {
+  for (AST::Evaluation &eval : evaluationCollection) {
     llvm::StringRef name{evalName(eval)};
     if (eval.isConstruct()) {
       outputStream << indentString << "<<" << name << ">>\n";
@@ -766,42 +682,34 @@ void dumpEvalList(
   }
 }
 
-void dumpFunctionLikeUnit(
-    llvm::raw_ostream &outputStream,
-    Fortran::lower::AST::FunctionLikeUnit &functionLikeUnit) {
+void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
+                          AST::FunctionLikeUnit &functionLikeUnit) {
   llvm::StringRef unitKind{};
   std::string name{};
   std::string header{};
   std::visit(
-      Fortran::common::visitors{
-          [&](const Fortran::parser::Statement<Fortran::parser::ProgramStmt>
-                  *statement) {
+      common::visitors{
+          [&](const parser::Statement<parser::ProgramStmt> *statement) {
             unitKind = "Program";
             name = statement->statement.v.ToString();
           },
-          [&](const Fortran::parser::Statement<Fortran::parser::FunctionStmt>
-                  *statement) {
+          [&](const parser::Statement<parser::FunctionStmt> *statement) {
             unitKind = "Function";
-            name = std::get<Fortran::parser::Name>(statement->statement.t)
-                       .ToString();
+            name = std::get<parser::Name>(statement->statement.t).ToString();
             header = statement->source.ToString();
           },
-          [&](const Fortran::parser::Statement<Fortran::parser::SubroutineStmt>
-                  *statement) {
+          [&](const parser::Statement<parser::SubroutineStmt> *statement) {
             unitKind = "Subroutine";
-            name = std::get<Fortran::parser::Name>(statement->statement.t)
-                       .ToString();
+            name = std::get<parser::Name>(statement->statement.t).ToString();
             header = statement->source.ToString();
           },
-          [&](const Fortran::parser::Statement<
-              Fortran::parser::MpSubprogramStmt> *statement) {
+          [&](const parser::Statement<parser::MpSubprogramStmt> *statement) {
             unitKind = "MpSubprogram";
             name = statement->statement.v.ToString();
             header = statement->source.ToString();
           },
           [&](auto *) {
-            if (std::get_if<const Fortran::parser::Statement<
-                    Fortran::parser::EndProgramStmt> *>(
+            if (std::get_if<const parser::Statement<parser::EndProgramStmt> *>(
                     &functionLikeUnit.funStmts.back())) {
               unitKind = "Program";
               name = "<anonymous>";
@@ -821,106 +729,82 @@ void dumpFunctionLikeUnit(
 
 } // namespace
 
-Fortran::lower::AST::FunctionLikeUnit::FunctionLikeUnit(
-    const Fortran::parser::MainProgram &func,
-    const Fortran::lower::AST::ParentType &parent)
+AST::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
+                                        const AST::ParentType &parent)
     : ProgramUnit{&func, parent} {
-  auto &ps{std::get<
-      std::optional<Fortran::parser::Statement<Fortran::parser::ProgramStmt>>>(
-      func.t)};
+  auto &ps{
+      std::get<std::optional<parser::Statement<parser::ProgramStmt>>>(func.t)};
   if (ps.has_value()) {
-    const Fortran::parser::Statement<Fortran::parser::ProgramStmt> &statement{
-        ps.value()};
+    const parser::Statement<parser::ProgramStmt> &statement{ps.value()};
     funStmts.push_back(&statement);
   }
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::EndProgramStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::EndProgramStmt>>(func.t));
 }
 
-Fortran::lower::AST::FunctionLikeUnit::FunctionLikeUnit(
-    const Fortran::parser::FunctionSubprogram &func,
-    const Fortran::lower::AST::ParentType &parent)
+AST::FunctionLikeUnit::FunctionLikeUnit(const parser::FunctionSubprogram &func,
+                                        const AST::ParentType &parent)
     : ProgramUnit{&func, parent} {
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::FunctionStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::FunctionStmt>>(func.t));
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::EndFunctionStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::EndFunctionStmt>>(func.t));
 }
 
-Fortran::lower::AST::FunctionLikeUnit::FunctionLikeUnit(
-    const Fortran::parser::SubroutineSubprogram &func,
-    const Fortran::lower::AST::ParentType &parent)
+AST::FunctionLikeUnit::FunctionLikeUnit(
+    const parser::SubroutineSubprogram &func, const AST::ParentType &parent)
     : ProgramUnit{&func, parent} {
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::SubroutineStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::SubroutineStmt>>(func.t));
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::EndSubroutineStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::EndSubroutineStmt>>(func.t));
 }
 
-Fortran::lower::AST::FunctionLikeUnit::FunctionLikeUnit(
-    const Fortran::parser::SeparateModuleSubprogram &func,
-    const Fortran::lower::AST::ParentType &parent)
+AST::FunctionLikeUnit::FunctionLikeUnit(
+    const parser::SeparateModuleSubprogram &func, const AST::ParentType &parent)
     : ProgramUnit{&func, parent} {
   funStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::MpSubprogramStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::MpSubprogramStmt>>(func.t));
   funStmts.push_back(
-      &std::get<
-          Fortran::parser::Statement<Fortran::parser::EndMpSubprogramStmt>>(
-          func.t));
+      &std::get<parser::Statement<parser::EndMpSubprogramStmt>>(func.t));
 }
 
-Fortran::lower::AST::ModuleLikeUnit::ModuleLikeUnit(
-    const Fortran::parser::Module &m,
-    const Fortran::lower::AST::ParentType &parent)
+AST::ModuleLikeUnit::ModuleLikeUnit(const parser::Module &m,
+                                    const AST::ParentType &parent)
     : ProgramUnit{&m, parent} {
-  modStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::ModuleStmt>>(m.t));
-  modStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::EndModuleStmt>>(
-          m.t));
+  modStmts.push_back(&std::get<parser::Statement<parser::ModuleStmt>>(m.t));
+  modStmts.push_back(&std::get<parser::Statement<parser::EndModuleStmt>>(m.t));
 }
 
-Fortran::lower::AST::ModuleLikeUnit::ModuleLikeUnit(
-    const Fortran::parser::Submodule &m,
-    const Fortran::lower::AST::ParentType &parent)
+AST::ModuleLikeUnit::ModuleLikeUnit(const parser::Submodule &m,
+                                    const AST::ParentType &parent)
     : ProgramUnit{&m, parent} {
+  modStmts.push_back(&std::get<parser::Statement<parser::SubmoduleStmt>>(m.t));
   modStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::SubmoduleStmt>>(
-          m.t));
-  modStmts.push_back(
-      &std::get<Fortran::parser::Statement<Fortran::parser::EndSubmoduleStmt>>(
-          m.t));
+      &std::get<parser::Statement<parser::EndSubmoduleStmt>>(m.t));
 }
 
-Fortran::lower::AST::BlockDataUnit::BlockDataUnit(
-    const Fortran::parser::BlockData &bd,
-    const Fortran::lower::AST::ParentType &parent)
+AST::BlockDataUnit::BlockDataUnit(const parser::BlockData &bd,
+                                  const AST::ParentType &parent)
     : ProgramUnit{&bd, parent} {}
 
-std::unique_ptr<Fortran::lower::AST::Program>
-Fortran::lower::createAST(const Fortran::parser::Program &root) {
+std::unique_ptr<AST::Program> createAST(const parser::Program &root) {
   ASTBuilder walker;
   Walk(root, walker);
   return walker.result();
 }
 
-void Fortran::lower::annotateControl(Fortran::lower::AST::Program &ast) {
+void annotateControl(AST::Program &ast) {
   for (auto &unit : ast.getUnits()) {
-    std::visit(Fortran::common::visitors{
-                   [](Fortran::lower::AST::BlockDataUnit &) {},
-                   [](Fortran::lower::AST::FunctionLikeUnit &func) {
+    std::visit(common::visitors{
+                   [](AST::BlockDataUnit &) {},
+                   [](AST::FunctionLikeUnit &func) {
                      annotateFuncCFG(func);
                      for (auto &statement : func.funcs) {
                        annotateFuncCFG(statement);
                      }
                    },
-                   [](Fortran::lower::AST::ModuleLikeUnit &unit) {
+                   [](AST::ModuleLikeUnit &unit) {
                      for (auto &func : unit.funcs) {
                        annotateFuncCFG(func);
                      }
@@ -931,20 +815,19 @@ void Fortran::lower::annotateControl(Fortran::lower::AST::Program &ast) {
 }
 
 /// Dump an AST.
-void Fortran::lower::dumpAST(llvm::raw_ostream &outputStream,
-                             Fortran::lower::AST::Program &ast) {
+void dumpAST(llvm::raw_ostream &outputStream, AST::Program &ast) {
   for (auto &unit : ast.getUnits()) {
-    std::visit(Fortran::common::visitors{
-                   [&](Fortran::lower::AST::BlockDataUnit &) {
+    std::visit(common::visitors{
+                   [&](AST::BlockDataUnit &) {
                      outputStream << "BlockData\nEndBlockData\n\n";
                    },
-                   [&](Fortran::lower::AST::FunctionLikeUnit &func) {
+                   [&](AST::FunctionLikeUnit &func) {
                      dumpFunctionLikeUnit(outputStream, func);
                      for (auto &func : func.funcs) {
                        dumpFunctionLikeUnit(outputStream, func);
                      }
                    },
-                   [&](Fortran::lower::AST::ModuleLikeUnit &unit) {
+                   [&](AST::ModuleLikeUnit &unit) {
                      for (auto &func : unit.funcs) {
                        dumpFunctionLikeUnit(outputStream, func);
                      }
@@ -953,3 +836,5 @@ void Fortran::lower::dumpAST(llvm::raw_ostream &outputStream,
                unit);
   }
 }
+
+} // namespace Fortran::lower
