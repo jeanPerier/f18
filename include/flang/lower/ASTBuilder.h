@@ -152,7 +152,8 @@ struct Evaluation {
       const Fortran::parser::EndForallStmt *>;
 
   Evaluation() = delete;
-  Evaluation(const Evaluation &) = default;
+  Evaluation(const Evaluation &) = delete;
+  Evaluation(Evaluation &&) = default;
 
   /// General ctor
   template <typename A>
@@ -227,7 +228,7 @@ struct Evaluation {
   void setBranches() { containsBranches = true; }
 
   constexpr EvaluationCollection *getConstructEvals() {
-    return isStmt() ? nullptr : subs;
+    return isStmt() ? nullptr : subs.get();
   }
 
   /// Set that the construct `cstr` (if not a nullptr) has branches.
@@ -240,7 +241,7 @@ struct Evaluation {
   ParentType parent;
   Fortran::parser::CharBlock pos;
   std::optional<Fortran::parser::Label> lab;
-  EvaluationCollection *subs; // construct sub-statements
+  std::unique_ptr<EvaluationCollection> subs; // construct sub-statements
   CFGAnnotation cfg{CFGAnnotation::None};
   bool isTarget{false};         // this evaluation is a control target
   bool containsBranches{false}; // construct contains branches
@@ -251,6 +252,8 @@ struct Evaluation {
 struct ProgramUnit {
   template <typename A>
   ProgramUnit(A *ptr, const ParentType &parent) : p{ptr}, parent{parent} {}
+  ProgramUnit(ProgramUnit &&) = default;
+  ProgramUnit(const ProgramUnit &) = delete;
 
   std::variant<const Fortran::parser::MainProgram *,
                const Fortran::parser::FunctionSubprogram *,
@@ -285,6 +288,8 @@ struct FunctionLikeUnit : public ProgramUnit {
                    const ParentType &parent);
   FunctionLikeUnit(const Fortran::parser::SeparateModuleSubprogram &f,
                    const ParentType &parent);
+  FunctionLikeUnit(FunctionLikeUnit &&) = default;
+  FunctionLikeUnit(const FunctionLikeUnit &) = delete;
 
   bool isMainProgram() {
     return std::holds_alternative<
@@ -329,6 +334,8 @@ struct ModuleLikeUnit : public ProgramUnit {
   ModuleLikeUnit(const Fortran::parser::Module &m, const ParentType &parent);
   ModuleLikeUnit(const Fortran::parser::Submodule &m, const ParentType &parent);
   ~ModuleLikeUnit() = default;
+  ModuleLikeUnit(ModuleLikeUnit &&) = default;
+  ModuleLikeUnit(const ModuleLikeUnit &) = delete;
 
   const semantics::Scope *scope{nullptr};
   std::list<ModuleStatement> modStmts;
@@ -337,11 +344,17 @@ struct ModuleLikeUnit : public ProgramUnit {
 
 struct BlockDataUnit : public ProgramUnit {
   BlockDataUnit(const Fortran::parser::BlockData &bd, const ParentType &parent);
+  BlockDataUnit(BlockDataUnit &&) = default;
+  BlockDataUnit(const BlockDataUnit &) = delete;
 };
 
 /// A Program is the top-level AST
 struct Program {
   using Units = std::variant<FunctionLikeUnit, ModuleLikeUnit, BlockDataUnit>;
+
+  Program() = default;
+  Program(Program &&) = default;
+  Program(const Program &) = delete;
 
   std::list<Units> &getUnits() { return units; }
 

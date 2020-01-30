@@ -73,8 +73,7 @@ public:
   // Block data
 
   void Post(const Fortran::parser::BlockData &node) {
-    Fortran::lower::AST::BlockDataUnit unit{node, parents.back()};
-    addUnit(unit);
+    addUnit(Fortran::lower::AST::BlockDataUnit{node, parents.back()});
   }
 
   //
@@ -398,8 +397,8 @@ private:
   bool enterConstruct(const A &construct) {
     auto &con =
         addEval(Fortran::lower::AST::Evaluation{construct, parents.back()});
-    con.subs = new Fortran::lower::AST::EvaluationCollection;
-    pushEval(con.subs);
+    con.subs.reset(new Fortran::lower::AST::EvaluationCollection);
+    pushEval(con.subs.get());
     parents.emplace_back(&con);
     return true;
   }
@@ -426,18 +425,18 @@ private:
   }
 
   template <typename A>
-  A &addUnit(const A &unit) {
-    pgm->getUnits().emplace_back(unit);
+  A &addUnit(A &&unit) {
+    pgm->getUnits().emplace_back(std::move(unit));
     return std::get<A>(pgm->getUnits().back());
   }
 
   template <typename A>
-  A &addFunc(const A &func) {
+  A &addFunc(A &&func) {
     if (funclist) {
-      funclist->emplace_back(func);
+      funclist->emplace_back(std::move(func));
       return funclist->back();
     }
-    return addUnit(func);
+    return addUnit(std::move(func));
   }
 
   /// move the Evaluation to the end of the current list
