@@ -9,6 +9,7 @@
 #include "flang/lower/ASTBuilder.h"
 #include "flang/parser/dump-parse-tree.h"
 #include "flang/parser/parse-tree-visitor.h"
+#include <algorithm>
 #include <cassert>
 #include <utility>
 
@@ -470,12 +471,13 @@ private:
 
 template <typename A>
 constexpr bool hasErrLabel(const A &stmt) {
+  auto isError{[](const auto &v) {
+    return std::holds_alternative<Fortran::parser::ErrLabel>(v.u);
+  }};
   if constexpr (std::is_same_v<A, Fortran::parser::ReadStmt> ||
                 std::is_same_v<A, Fortran::parser::WriteStmt>) {
-    for (const auto &control : stmt.controls) {
-      if (std::holds_alternative<Fortran::parser::ErrLabel>(control.u))
-        return true;
-    }
+    return std::any_of(std::begin(stmt.controls), std::end(stmt.controls),
+                       isError);
   }
   if constexpr (std::is_same_v<A, Fortran::parser::WaitStmt> ||
                 std::is_same_v<A, Fortran::parser::OpenStmt> ||
@@ -484,17 +486,12 @@ constexpr bool hasErrLabel(const A &stmt) {
                 std::is_same_v<A, Fortran::parser::EndfileStmt> ||
                 std::is_same_v<A, Fortran::parser::RewindStmt> ||
                 std::is_same_v<A, Fortran::parser::FlushStmt>) {
-    for (const auto &spec : stmt.v) {
-      if (std::holds_alternative<Fortran::parser::ErrLabel>(spec.u))
-        return true;
-    }
+    return std::any_of(std::begin(stmt.v), std::end(stmt.v), isError);
   }
   if constexpr (std::is_same_v<A, Fortran::parser::InquireStmt>) {
-    for (const auto &spec :
-         std::get<std::list<Fortran::parser::InquireSpec>>(stmt.u)) {
-      if (std::holds_alternative<Fortran::parser::ErrLabel>(spec.u))
-        return true;
-    }
+    const auto &specifiers{
+        std::get<std::list<Fortran::parser::InquireSpec>>(stmt.u)};
+    return std::any_of(std::begin(specifiers), std::end(specifiers), isError);
   }
   return false;
 }
@@ -575,7 +572,7 @@ void annotateEvalListCFG(
       // assume that the entry and exit are both possible branch targets
       nextIsTarget = true;
     }
-    if (eval.isActionStmt() && eval.lab.has_value())
+    if (eval.isActionOrGenerated() && eval.lab.has_value())
       eval.isTarget = true;
     std::visit(
         Fortran::common::visitors{

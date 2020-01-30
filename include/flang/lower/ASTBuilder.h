@@ -170,9 +170,9 @@ struct Evaluation {
     static_assert(AST::isConstruct<A>(), "must be a construct");
   }
 
-  /// is `A` executable (an action statement or compiler generated)?
+  /// is `A` an action statement ?
   template <typename A>
-  constexpr static bool isAction(const A &a) {
+  constexpr static bool isActionStmt(const A &a) {
     return !AST::isConstruct<A>() && !isOther(a);
   }
 
@@ -191,20 +191,21 @@ struct Evaluation {
            std::is_same_v<A, Fortran::parser::NamelistStmt>;
   }
 
-  constexpr bool isActionStmt() const {
+  constexpr bool isActionOrGenerated() const {
     return std::visit(common::visitors{
-                          [](auto *p) { return isAction(*p); },
+                          [](auto *p) { return isActionStmt(*p); },
                           [](auto &r) { return isGenerated(r); },
                       },
                       u);
   }
 
   constexpr bool isStmt() const {
-    return std::visit(common::visitors{
-                          [](auto *p) { return isAction(*p) || isOther(*p); },
-                          [](auto &r) { return isGenerated(r); },
-                      },
-                      u);
+    return std::visit(
+        common::visitors{
+            [](auto *p) { return isActionStmt(*p) || isOther(*p); },
+            [](auto &r) { return isGenerated(r); },
+        },
+        u);
   }
   constexpr bool isConstruct() const { return !isStmt(); }
 
