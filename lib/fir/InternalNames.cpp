@@ -56,7 +56,7 @@ std::string readName(L::StringRef uniq, std::size_t &i, std::size_t init,
   for (i = init; i < end && uniq[i] >= 'a' && uniq[i] <= 'z'; ++i) {
     // do nothing
   }
-  return uniq.substr(init, i);
+  return uniq.substr(init, i).str();
 }
 
 std::int64_t readInt(L::StringRef uniq, std::size_t &i, std::size_t init,

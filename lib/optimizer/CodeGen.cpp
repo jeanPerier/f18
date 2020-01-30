@@ -1250,7 +1250,7 @@ struct FieldIndexOpConversion : public FIROpConversion<fir::FieldIndexOp> {
   inline static std::string methodName(FieldIndexOp field) {
     L::Twine fldName = field.field_id();
     // note: using std::string to dodge a bug in g++ 7.4.0
-    std::string tyName = field.on_type().cast<RecordType>().getName();
+    std::string tyName = field.on_type().cast<RecordType>().getName().str();
     L::Twine methodName = "_QQOFFSETOF_" + tyName + "_" + fldName;
     return methodName.str();
   }
