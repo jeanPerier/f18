@@ -30,13 +30,12 @@ namespace {
 /// the bridge to one such instantiation.
 class ASTBuilder {
 public:
-  ASTBuilder() {
-    pgm = new Fortran::lower::AST::Program;
-    parents.push_back(pgm);
-  }
+  ASTBuilder() : pgm{new Fortran::lower::AST::Program}, parents{pgm.get()} {}
 
   /// Get the result
-  Fortran::lower::AST::Program *result() { return pgm; }
+  std::unique_ptr<Fortran::lower::AST::Program> result() {
+    return std::move(pgm);
+  }
 
   template <typename A>
   constexpr bool Pre(const A &) {
@@ -463,7 +462,7 @@ private:
     evallist.pop_back();
   }
 
-  Fortran::lower::AST::Program *pgm;
+  std::unique_ptr<Fortran::lower::AST::Program> pgm;
   std::list<Fortran::lower::AST::FunctionLikeUnit> *funclist{nullptr};
   std::vector<Fortran::lower::AST::EvaluationCollection *> evallist;
   std::vector<Fortran::lower::AST::ParentType> parents;
@@ -905,7 +904,7 @@ Fortran::lower::AST::BlockDataUnit::BlockDataUnit(
     const Fortran::lower::AST::ParentType &parent)
     : ProgramUnit{&bd, parent} {}
 
-Fortran::lower::AST::Program *
+std::unique_ptr<Fortran::lower::AST::Program>
 Fortran::lower::createAST(const Fortran::parser::Program &root) {
   ASTBuilder walker;
   Walk(root, walker);
