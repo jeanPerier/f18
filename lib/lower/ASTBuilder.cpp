@@ -482,6 +482,9 @@ bool hasAltReturns(const parser::CallStmt &callStmt) {
 
 /// Determine if `callStmt` has alternate returns and if so set `e` to be the
 /// origin of a switch-like control flow
+///
+/// \param cstr points to the current construct. It may be null at the top-level
+/// of a FunctionLikeUnit.
 void altRet(AST::Evaluation &evaluation, const parser::CallStmt *callStmt,
             AST::Evaluation *cstr) {
   if (hasAltReturns(*callStmt))
@@ -496,6 +499,8 @@ void ioLabel(AST::Evaluation &evaluation, const A *statement,
     evaluation.setCFG(AST::CFGAnnotation::IoSwitch, cstr);
 }
 
+/// \param cstr points to the current construct. It may be null at the top-level
+/// of a FunctionLikeUnit.
 void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
                          AST::Evaluation *cstr) {
   bool nextIsTarget = false;
