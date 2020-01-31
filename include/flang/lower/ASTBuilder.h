@@ -10,7 +10,6 @@
 #define FORTRAN_LOWER_AST_BUILDER_H_
 
 #include "flang/parser/parse-tree.h"
-#include "flang/semantics/scope.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 
@@ -61,8 +60,8 @@ enum class CFGAnnotation {
 /// This is used to convert implicit control-flow edges to explicit form in the
 /// decorated AST
 struct CGJump {
-  CGJump(Evaluation *to) : target{to} {}
-  Evaluation *target{nullptr};
+  CGJump(Evaluation &to) : target{to} {}
+  Evaluation &target;
 };
 
 /// is `A` a construct (or directive)?
@@ -291,10 +290,9 @@ struct FunctionLikeUnit : public ProgramUnit {
     return getA<parser::MpSubprogramStmt>();
   }
 
-  const semantics::Scope *scope{nullptr}; // scope from front-end
-  std::list<FunctionStatement> funStmts;  // begin/end pair
-  EvaluationCollection evals;             // statements
-  std::list<FunctionLikeUnit> funcs;      // internal procedures
+  std::list<FunctionStatement> funStmts; // begin/end pair
+  EvaluationCollection evals;            // statements
+  std::list<FunctionLikeUnit> funcs;     // internal procedures
 
 private:
   template <typename A>
@@ -321,7 +319,6 @@ struct ModuleLikeUnit : public ProgramUnit {
   ModuleLikeUnit(ModuleLikeUnit &&) = default;
   ModuleLikeUnit(const ModuleLikeUnit &) = delete;
 
-  const semantics::Scope *scope{nullptr};
   std::list<ModuleStatement> modStmts;
   std::list<FunctionLikeUnit> funcs;
 };
