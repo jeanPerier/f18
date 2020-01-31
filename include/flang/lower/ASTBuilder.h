@@ -1,4 +1,4 @@
-//===-- include/flang/lower/AstBuilder.h ------------------------*- C++ -*-===//
+//===-- include/flang/lower/ASTBuilder.h ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -13,6 +13,16 @@
 #include "flang/semantics/scope.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
+
+/// Build a light-weight AST to help with lowering to FIR.  The AST will
+/// capture pointers back into the parse tree, so the parse tree data structure
+/// may <em>not</em> be changed between the construction of the AST and all of
+/// its uses.
+///
+/// The AST captures a structured view of the program.  The program is a list of
+/// units.  Function like units will contain lists of evaluations.  Evaluations
+/// are either statements or constructs, where a construct contains a list of
+/// evaluations.  The resulting AST structure can then be used to create FIR.
 
 namespace Fortran::lower {
 namespace AST {
@@ -30,17 +40,20 @@ using EvaluationCollection = std::list<Evaluation>;
 using ParentType =
     std::variant<Program *, ModuleLikeUnit *, FunctionLikeUnit *, Evaluation *>;
 
+/// Flags to describe the impact of parse-trees nodes on the program
+/// control flow. These annotations to parse-tree nodes are later used to
+/// build the control flow graph when lowering to FIR.
 enum class CFGAnnotation {
-  None,
-  Goto,
-  CondGoto,
-  IndGoto,
-  IoSwitch,
-  Switch,
-  Iterative,
-  FirStructuredOp,
-  Return,
-  Terminate
+  None,            // Node does not impact control flow.
+  Goto,            // Node acts like a goto on the control flow.
+  CondGoto,        // Node acts like a conditional goto on the control flow.
+  IndGoto,         // Node acts like an indirect goto on the control flow.
+  IoSwitch,        // Node is an IO statement with ERR, END, or EOR specifier.
+  Switch,          // Node acts like a switch on the control flow.
+  Iterative,       // Node creates iterations in the control flow.
+  FirStructuredOp, // Node is a structured loop.
+  Return,          // Node triggers a return from the current procedure.
+  Terminate        // Node terminates the program.
 };
 
 /// Compiler-generated jump
@@ -240,7 +253,8 @@ struct ProgramUnit {
 };
 
 /// Function-like units have similar structure. They all can contain executable
-/// statements.
+/// statements as well as other function-like units (internal procedures and
+/// function statements).
 struct FunctionLikeUnit : public ProgramUnit {
   // wrapper statements for function-like syntactic structures
   using FunctionStatement =

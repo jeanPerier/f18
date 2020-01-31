@@ -1,4 +1,4 @@
-//===-- lib/lower/AstBuilder.cc -------------------------------------------===//
+//===-- lib/lower/ASTBuilder.cc -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,16 +12,6 @@
 #include <algorithm>
 #include <cassert>
 #include <utility>
-
-/// Build a light-weight AST to help with lowering to FIR.  The AST will
-/// capture pointers back into the parse tree, so the parse tree data structure
-/// may <em>not</em> be changed between the construction of the AST and all of
-/// its uses.
-///
-/// The AST captures a structured view of the program.  The program is a list of
-/// units.  Function like units will contain lists of evaluations.  Evaluations
-/// are either statements or constructs, where a construct contains a list of
-/// evaluations.  The resulting AST structure can then be used to create FIR.
 
 namespace Fortran::lower {
 namespace {
@@ -407,7 +397,13 @@ private:
   }
 
   std::unique_ptr<AST::Program> pgm;
+  /// funclist points to FunctionLikeUnit::funcs list (resp.
+  /// ModuleLikeUnit::funcs) when building a FunctionLikeUnit (resp.
+  /// ModuleLikeUnit) to store internal procedures (resp. module procedures).
+  /// Otherwise (e.g. when building the top level Program), it is null.
   std::list<AST::FunctionLikeUnit> *funclist{nullptr};
+  /// evallist is a stack of pointer to FunctionLikeUnit::evals (or
+  /// Evaluation::subs) that are being build.
   std::vector<AST::EvaluationCollection *> evallist;
   std::vector<AST::ParentType> parents;
 };
