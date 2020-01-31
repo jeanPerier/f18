@@ -180,7 +180,7 @@ class CfgBuilder {
     A i{iter};
     A j{nextFalseTarget(++i, endif)};
     auto *cstr = std::get<AST::Evaluation *>(e.parent);
-    AST::CGJump jump{&*endif};
+    AST::CGJump jump{*endif};
     A k{evals.insert(j, AST::Evaluation{std::move(jump), j->parent})};
     if (i == j) {
       // block was empty, so adjust "true" target
@@ -218,13 +218,13 @@ class CfgBuilder {
                   // the END DO is the loop exit landing pad
                   // insert a JUMP as the backedge right before the END DO
                   auto *cstr = std::get<AST::Evaluation *>(e.parent);
-                  AST::CGJump jump{&cstr->subs->front()};
+                  AST::CGJump jump{cstr->subs->front()};
                   AST::Evaluation jumpEval{std::move(jump), iter->parent};
                   evals.insert(iter, std::move(jumpEval));
                   addSourceToSink(&e, &cstr->subs->front());
                 },
                 [&](const AST::CGJump &jump) {
-                  addSourceToSink(&e, jump.target);
+                  addSourceToSink(&e, &jump.target);
                 },
                 [](auto) { assert(false && "unhandled GOTO case"); },
             },
