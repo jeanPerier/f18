@@ -485,17 +485,17 @@ bool hasAltReturns(const parser::CallStmt &callStmt) {
 ///
 /// \param cstr points to the current construct. It may be null at the top-level
 /// of a FunctionLikeUnit.
-void altRet(AST::Evaluation &evaluation, const parser::CallStmt *callStmt,
+void altRet(AST::Evaluation &evaluation, const parser::CallStmt &callStmt,
             AST::Evaluation *cstr) {
-  if (hasAltReturns(*callStmt))
+  if (hasAltReturns(callStmt))
     evaluation.setCFG(AST::CFGAnnotation::Switch, cstr);
 }
 
 template <typename A>
-void ioLabel(AST::Evaluation &evaluation, const A *statement,
+void ioLabel(AST::Evaluation &evaluation, const A &statement,
              AST::Evaluation *cstr) {
-  if (hasErrLabel(*statement) || hasEorLabel(*statement) ||
-      hasEndLabel(*statement))
+  if (hasErrLabel(statement) || hasEorLabel(statement) ||
+      hasEndLabel(statement))
     evaluation.setCFG(AST::CFGAnnotation::IoSwitch, cstr);
 }
 
@@ -514,137 +514,135 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
     }
     if (eval.isActionOrGenerated() && eval.lab.has_value())
       eval.isTarget = true;
-    std::visit(
-        common::visitors{
-            [&](const parser::BackspaceStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::CallStmt *statement) {
-              altRet(eval, statement, cstr);
-            },
-            [&](const parser::CloseStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::CycleStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
-            },
-            [&](const parser::EndfileStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::ExitStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
-            },
-            [&](const parser::FailImageStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
-            },
-            [&](const parser::FlushStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::GotoStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
-            },
-            [&](const parser::IfStmt *) {
-              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const parser::InquireStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::OpenStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::ReadStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::ReturnStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Return, cstr);
-            },
-            [&](const parser::RewindStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::StopStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
-            },
-            [&](const parser::WaitStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::WriteStmt *statement) {
-              ioLabel(eval, statement, cstr);
-            },
-            [&](const parser::ArithmeticIfStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const parser::AssignedGotoStmt *) {
-              eval.setCFG(AST::CFGAnnotation::IndGoto, cstr);
-            },
-            [&](const parser::ComputedGotoStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const parser::WhereStmt *) {
-              // fir.loop + fir.where around the next stmt
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const parser::ForallStmt *) {
-              // fir.loop around the next stmt
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](AST::CGJump &) { eval.setCFG(AST::CFGAnnotation::Goto, cstr); },
-            [&](const parser::EndAssociateStmt *) { eval.isTarget = true; },
-            [&](const parser::EndBlockStmt *) { eval.isTarget = true; },
-            [&](const parser::SelectCaseStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const parser::CaseStmt *) { eval.isTarget = true; },
-            [&](const parser::EndSelectStmt *) { eval.isTarget = true; },
-            [&](const parser::EndChangeTeamStmt *) { eval.isTarget = true; },
-            [&](const parser::EndCriticalStmt *) { eval.isTarget = true; },
-            [&](const parser::NonLabelDoStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const parser::EndDoStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Goto, cstr);
-            },
-            [&](const parser::IfThenStmt *) {
-              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const parser::ElseIfStmt *) {
-              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const parser::ElseStmt *) { eval.isTarget = true; },
-            [&](const parser::EndIfStmt *) { eval.isTarget = true; },
-            [&](const parser::SelectRankStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const parser::SelectRankCaseStmt *) { eval.isTarget = true; },
-            [&](const parser::SelectTypeStmt *) {
-              eval.setCFG(AST::CFGAnnotation::Switch, cstr);
-            },
-            [&](const parser::TypeGuardStmt *) { eval.isTarget = true; },
-            [&](const parser::WhereConstruct *) {
-              // mark the WHERE as if it were a DO loop
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const parser::WhereConstructStmt *) {
-              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const parser::MaskedElsewhereStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
-            },
-            [&](const parser::ElsewhereStmt *) { eval.isTarget = true; },
-            [&](const parser::EndWhereStmt *) { eval.isTarget = true; },
-            [&](const parser::ForallConstructStmt *) {
-              eval.isTarget = true;
-              eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
-            },
-            [&](const parser::EndForallStmt *) { eval.isTarget = true; },
-            [](const auto *) { /* do nothing */ },
+    eval.visit(common::visitors{
+        [&](const parser::BackspaceStmt &statement) {
+          ioLabel(eval, statement, cstr);
         },
-        eval.u);
+        [&](const parser::CallStmt &statement) {
+          altRet(eval, statement, cstr);
+        },
+        [&](const parser::CloseStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::CycleStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Goto, cstr);
+        },
+        [&](const parser::EndfileStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::ExitStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Goto, cstr);
+        },
+        [&](const parser::FailImageStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
+        },
+        [&](const parser::FlushStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::GotoStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Goto, cstr);
+        },
+        [&](const parser::IfStmt &) {
+          eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
+        },
+        [&](const parser::InquireStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::OpenStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::ReadStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::ReturnStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Return, cstr);
+        },
+        [&](const parser::RewindStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::StopStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
+        },
+        [&](const parser::WaitStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::WriteStmt &statement) {
+          ioLabel(eval, statement, cstr);
+        },
+        [&](const parser::ArithmeticIfStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Switch, cstr);
+        },
+        [&](const parser::AssignedGotoStmt &) {
+          eval.setCFG(AST::CFGAnnotation::IndGoto, cstr);
+        },
+        [&](const parser::ComputedGotoStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Switch, cstr);
+        },
+        [&](const parser::WhereStmt &) {
+          // fir.loop + fir.where around the next stmt
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
+        },
+        [&](const parser::ForallStmt &) {
+          // fir.loop around the next stmt
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
+        },
+        [&](AST::CGJump &) { eval.setCFG(AST::CFGAnnotation::Goto, cstr); },
+        [&](const parser::EndAssociateStmt &) { eval.isTarget = true; },
+        [&](const parser::EndBlockStmt &) { eval.isTarget = true; },
+        [&](const parser::SelectCaseStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Switch, cstr);
+        },
+        [&](const parser::CaseStmt &) { eval.isTarget = true; },
+        [&](const parser::EndSelectStmt &) { eval.isTarget = true; },
+        [&](const parser::EndChangeTeamStmt &) { eval.isTarget = true; },
+        [&](const parser::EndCriticalStmt &) { eval.isTarget = true; },
+        [&](const parser::NonLabelDoStmt &) {
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
+        },
+        [&](const parser::EndDoStmt &) {
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Goto, cstr);
+        },
+        [&](const parser::IfThenStmt &) {
+          eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
+        },
+        [&](const parser::ElseIfStmt &) {
+          eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
+        },
+        [&](const parser::ElseStmt &) { eval.isTarget = true; },
+        [&](const parser::EndIfStmt &) { eval.isTarget = true; },
+        [&](const parser::SelectRankStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Switch, cstr);
+        },
+        [&](const parser::SelectRankCaseStmt &) { eval.isTarget = true; },
+        [&](const parser::SelectTypeStmt &) {
+          eval.setCFG(AST::CFGAnnotation::Switch, cstr);
+        },
+        [&](const parser::TypeGuardStmt &) { eval.isTarget = true; },
+        [&](const parser::WhereConstruct &) {
+          // mark the WHERE as if it were a DO loop
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
+        },
+        [&](const parser::WhereConstructStmt &) {
+          eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
+        },
+        [&](const parser::MaskedElsewhereStmt &) {
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
+        },
+        [&](const parser::ElsewhereStmt &) { eval.isTarget = true; },
+        [&](const parser::EndWhereStmt &) { eval.isTarget = true; },
+        [&](const parser::ForallConstructStmt &) {
+          eval.isTarget = true;
+          eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
+        },
+        [&](const parser::EndForallStmt &) { eval.isTarget = true; },
+        [](const auto &) { /* do nothing */ },
+    });
   }
 }
 
@@ -655,14 +653,12 @@ inline void annotateFuncCFG(AST::FunctionLikeUnit &functionLikeUnit) {
 }
 
 llvm::StringRef evalName(AST::Evaluation &eval) {
-  return std::visit(
-      common::visitors{[](const AST::CGJump) { return "CGJump"; },
-                       [](const auto *parseTreeNode) {
-                         assert(parseTreeNode && "nullptr node in AST ");
-                         return parser::ParseTreeDumper::GetNodeName(
-                             *parseTreeNode);
-                       }},
-      eval.u);
+  return eval.visit(common::visitors{
+      [](const AST::CGJump) { return "CGJump"; },
+      [](const auto &parseTreeNode) {
+        return parser::ParseTreeDumper::GetNodeName(parseTreeNode);
+      },
+  });
 }
 
 void dumpEvalList(llvm::raw_ostream &outputStream,
