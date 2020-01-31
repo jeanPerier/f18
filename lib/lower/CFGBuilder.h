@@ -39,22 +39,21 @@ class CfgBuilder {
   /// cache ASSIGN statements that may yield a live branch target
   void cacheAssigns(std::list<AST::Evaluation> &evals) {
     for (auto &e : evals) {
-      std::visit(Co::visitors{
-                     [&](const Pa::AssignStmt *stmt) {
-                       auto *trg = getEvalByLabel(std::get<Pa::Label>(stmt->t));
-                       auto *sym = std::get<Pa::Name>(stmt->t).symbol;
-                       assert(sym);
-                       auto jter = assignedGotoMap.find(sym);
-                       if (jter == assignedGotoMap.end()) {
-                         std::list<AST::Evaluation *> lst = {trg};
-                         assignedGotoMap.try_emplace(sym, lst);
-                       } else {
-                         jter->second.emplace_back(trg);
-                       }
-                     },
-                     [](auto) { /* do nothing */ },
-                 },
-                 e.u);
+      e.visit(Co::visitors{
+          [&](const Pa::AssignStmt &stmt) {
+            auto *trg = getEvalByLabel(std::get<Pa::Label>(stmt.t));
+            auto *sym = std::get<Pa::Name>(stmt.t).symbol;
+            assert(sym);
+            auto jter = assignedGotoMap.find(sym);
+            if (jter == assignedGotoMap.end()) {
+              std::list<AST::Evaluation *> lst = {trg};
+              assignedGotoMap.try_emplace(sym, lst);
+            } else {
+              jter->second.emplace_back(trg);
+            }
+          },
+          [](auto &) { /* do nothing */ },
+      });
       if (e.subs) {
         cacheAssigns(*e.subs);
       }
@@ -72,10 +71,10 @@ class CfgBuilder {
 
   bool structuredCheck(std::list<AST::Evaluation> &evals) {
     for (auto &e : evals) {
-      if (auto **s = std::get_if<const Pa::DoConstruct *>(&e.u)) {
-        return (*s)->IsDoWhile() ? false : structuredCheck(*e.subs);
+      if (auto *s = e.getIf<Pa::DoConstruct>()) {
+        return s->IsDoWhile() ? false : structuredCheck(*e.subs);
       }
-      if (std::holds_alternative<const Pa::IfConstruct *>(e.u)) {
+      if (e.isA<Pa::IfConstruct>()) {
         return structuredCheck(*e.subs);
       }
       if (e.subs) {
@@ -101,7 +100,7 @@ class CfgBuilder {
       case AST::CFGAnnotation::Terminate:
         return false;
       case AST::CFGAnnotation::Goto:
-        if (!std::holds_alternative<const Pa::EndDoStmt *>(e.u)) {
+        if (!e.isA<Pa::EndDoStmt>()) {
           return false;
         }
         break;
@@ -112,13 +111,13 @@ class CfgBuilder {
 
   void wrapIterationSpaces(std::list<AST::Evaluation> &evals) {
     for (auto &e : evals) {
-      if (std::holds_alternative<const Pa::DoConstruct *>(e.u))
+      if (e.isA<Pa::DoConstruct>())
         if (structuredCheck(*e.subs)) {
           deannotate(*e.subs);
           e.cfg = AST::CFGAnnotation::FirStructuredOp;
           continue;
         }
-      if (std::holds_alternative<const Pa::IfConstruct *>(e.u))
+      if (e.isA<Pa::IfConstruct>())
         if (structuredCheck(*e.subs)) {
           deannotate(*e.subs);
           e.cfg = AST::CFGAnnotation::FirStructuredOp;
@@ -159,13 +158,12 @@ class CfgBuilder {
   template <typename A>
   A nextFalseTarget(A iter, const A &endi) {
     for (; iter != endi; ++iter)
-      if (std::visit(Co::visitors{
-                         [&](const Pa::ElseIfStmt *) { return true; },
-                         [&](const Pa::ElseStmt *) { return true; },
-                         [&](const Pa::EndIfStmt *) { return true; },
-                         [](auto) { return false; },
-                     },
-                     iter->u)) {
+      if (iter->visit(Co::visitors{
+              [&](const Pa::ElseIfStmt &) { return true; },
+              [&](const Pa::ElseStmt &) { return true; },
+              [&](const Pa::EndIfStmt &) { return true; },
+              [](auto &) { return false; },
+          })) {
         break;
       }
     return iter;
@@ -201,111 +199,100 @@ class CfgBuilder {
         // do nothing - does not impart control flow
         break;
       case AST::CFGAnnotation::Goto:
-        std::visit(
-            Co::visitors{
-                [&](const Pa::CycleStmt *) {
-                  // FIXME: deal with construct name
-                  auto *cstr = std::get<AST::Evaluation *>(e.parent);
-                  addSourceToSink(&e, &cstr->subs->front());
-                },
-                [&](const Pa::ExitStmt *) {
-                  // FIXME: deal with construct name
-                  auto *cstr = std::get<AST::Evaluation *>(e.parent);
-                  addSourceToSink(&e, &cstr->subs->back());
-                },
-                [&](const Pa::GotoStmt *stmt) { addSourceToSink(&e, stmt->v); },
-                [&](const Pa::EndDoStmt *) {
-                  // the END DO is the loop exit landing pad
-                  // insert a JUMP as the backedge right before the END DO
-                  auto *cstr = std::get<AST::Evaluation *>(e.parent);
-                  AST::CGJump jump{cstr->subs->front()};
-                  AST::Evaluation jumpEval{std::move(jump), iter->parent};
-                  evals.insert(iter, std::move(jumpEval));
-                  addSourceToSink(&e, &cstr->subs->front());
-                },
-                [&](const AST::CGJump &jump) {
-                  addSourceToSink(&e, &jump.target);
-                },
-                [](auto) { assert(false && "unhandled GOTO case"); },
+        e.visit(Co::visitors{
+            [&](const Pa::CycleStmt &) {
+              // FIXME: deal with construct name
+              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              addSourceToSink(&e, &cstr->subs->front());
             },
-            e.u);
+            [&](const Pa::ExitStmt &) {
+              // FIXME: deal with construct name
+              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              addSourceToSink(&e, &cstr->subs->back());
+            },
+            [&](const Pa::GotoStmt &stmt) { addSourceToSink(&e, stmt.v); },
+            [&](const Pa::EndDoStmt &) {
+              // the END DO is the loop exit landing pad
+              // insert a JUMP as the backedge right before the END DO
+              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              AST::CGJump jump{cstr->subs->front()};
+              AST::Evaluation jumpEval{std::move(jump), iter->parent};
+              evals.insert(iter, std::move(jumpEval));
+              addSourceToSink(&e, &cstr->subs->front());
+            },
+            [&](const AST::CGJump &jump) { addSourceToSink(&e, &jump.target); },
+            [](auto &) { assert(false && "unhandled GOTO case"); },
+        });
         break;
       case AST::CFGAnnotation::CondGoto:
-        std::visit(Co::visitors{
-                       [&](const Pa::IfStmt *) {
-                         // check if these are marked; they must targets here
-                         auto i{iter};
-                         addSourceToSink(&e, &*(++i));
-                         addSourceToSink(&e, &*(++i));
-                       },
-                       [&](const Pa::IfThenStmt *) {
-                         doNextIfBlock(evals, e, iter, evals.end());
-                       },
-                       [&](const Pa::ElseIfStmt *) {
-                         doNextIfBlock(evals, e, iter, evals.end());
-                       },
-                       [](const Pa::WhereConstructStmt *) { TODO(); },
-                       [](const Pa::MaskedElsewhereStmt *) { TODO(); },
-                       [](auto) { assert(false && "unhandled CGOTO case"); },
-                   },
-                   e.u);
+        e.visit(Co::visitors{
+            [&](const Pa::IfStmt &) {
+              // check if these are marked; they must targets here
+              auto i{iter};
+              addSourceToSink(&e, &*(++i));
+              addSourceToSink(&e, &*(++i));
+            },
+            [&](const Pa::IfThenStmt &) {
+              doNextIfBlock(evals, e, iter, evals.end());
+            },
+            [&](const Pa::ElseIfStmt &) {
+              doNextIfBlock(evals, e, iter, evals.end());
+            },
+            [](const Pa::WhereConstructStmt &) { TODO(); },
+            [](const Pa::MaskedElsewhereStmt &) { TODO(); },
+            [](auto &) { assert(false && "unhandled CGOTO case"); },
+        });
         break;
       case AST::CFGAnnotation::IndGoto:
-        std::visit(Co::visitors{
-                       [&](const Pa::AssignedGotoStmt *stmt) {
-                         auto *sym = std::get<Pa::Name>(stmt->t).symbol;
-                         if (assignedGotoMap.find(sym) != assignedGotoMap.end())
-                           for (auto *x : assignedGotoMap[sym]) {
-                             addSourceToSink(&e, x);
-                           }
-                         for (auto &l :
-                              std::get<std::list<Pa::Label>>(stmt->t)) {
-                           addSourceToSink(&e, l);
-                         }
-                       },
-                       [](auto) { assert(false && "unhandled IGOTO case"); },
-                   },
-                   e.u);
+        e.visit(Co::visitors{
+            [&](const Pa::AssignedGotoStmt &stmt) {
+              auto *sym = std::get<Pa::Name>(stmt.t).symbol;
+              if (assignedGotoMap.find(sym) != assignedGotoMap.end())
+                for (auto *x : assignedGotoMap[sym]) {
+                  addSourceToSink(&e, x);
+                }
+              for (auto &l : std::get<std::list<Pa::Label>>(stmt.t)) {
+                addSourceToSink(&e, l);
+              }
+            },
+            [](auto &) { assert(false && "unhandled IGOTO case"); },
+        });
         break;
       case AST::CFGAnnotation::IoSwitch:
-        std::visit(
-            Co::visitors{
-                [](const Pa::BackspaceStmt *) { TODO(); },
-                [](const Pa::CloseStmt *) { TODO(); },
-                [](const Pa::EndfileStmt *) { TODO(); },
-                [](const Pa::FlushStmt *) { TODO(); },
-                [](const Pa::InquireStmt *) { TODO(); },
-                [](const Pa::OpenStmt *) { TODO(); },
-                [](const Pa::ReadStmt *) { TODO(); },
-                [](const Pa::RewindStmt *) { TODO(); },
-                [](const Pa::WaitStmt *) { TODO(); },
-                [](const Pa::WriteStmt *) { TODO(); },
-                [](auto) { assert(false && "unhandled IO switch case"); },
-            },
-            e.u);
+        e.visit(Co::visitors{
+            [](const Pa::BackspaceStmt &) { TODO(); },
+            [](const Pa::CloseStmt &) { TODO(); },
+            [](const Pa::EndfileStmt &) { TODO(); },
+            [](const Pa::FlushStmt &) { TODO(); },
+            [](const Pa::InquireStmt &) { TODO(); },
+            [](const Pa::OpenStmt &) { TODO(); },
+            [](const Pa::ReadStmt &) { TODO(); },
+            [](const Pa::RewindStmt &) { TODO(); },
+            [](const Pa::WaitStmt &) { TODO(); },
+            [](const Pa::WriteStmt &) { TODO(); },
+            [](auto &) { assert(false && "unhandled IO switch case"); },
+        });
         break;
       case AST::CFGAnnotation::Switch:
-        std::visit(Co::visitors{
-                       [](const Pa::CallStmt *) { TODO(); },
-                       [](const Pa::ArithmeticIfStmt *) { TODO(); },
-                       [](const Pa::ComputedGotoStmt *) { TODO(); },
-                       [](const Pa::SelectCaseStmt *) { TODO(); },
-                       [](const Pa::SelectRankStmt *) { TODO(); },
-                       [](const Pa::SelectTypeStmt *) { TODO(); },
-                       [](auto) { assert(false && "unhandled switch case"); },
-                   },
-                   e.u);
+        e.visit(Co::visitors{
+            [](const Pa::CallStmt &) { TODO(); },
+            [](const Pa::ArithmeticIfStmt &) { TODO(); },
+            [](const Pa::ComputedGotoStmt &) { TODO(); },
+            [](const Pa::SelectCaseStmt &) { TODO(); },
+            [](const Pa::SelectRankStmt &) { TODO(); },
+            [](const Pa::SelectTypeStmt &) { TODO(); },
+            [](auto &) { assert(false && "unhandled switch case"); },
+        });
         break;
       case AST::CFGAnnotation::Iterative:
-        std::visit(Co::visitors{
-                       [](const Pa::NonLabelDoStmt *) { TODO(); },
-                       [](const Pa::WhereStmt *) { TODO(); },
-                       [](const Pa::ForallStmt *) { TODO(); },
-                       [](const Pa::WhereConstruct *) { TODO(); },
-                       [](const Pa::ForallConstructStmt *) { TODO(); },
-                       [](auto) { assert(false && "unhandled loop case"); },
-                   },
-                   e.u);
+        e.visit(Co::visitors{
+            [](const Pa::NonLabelDoStmt &) { TODO(); },
+            [](const Pa::WhereStmt &) { TODO(); },
+            [](const Pa::ForallStmt &) { TODO(); },
+            [](const Pa::WhereConstruct &) { TODO(); },
+            [](const Pa::ForallConstructStmt &) { TODO(); },
+            [](auto &) { assert(false && "unhandled loop case"); },
+        });
         break;
       case AST::CFGAnnotation::FirStructuredOp:
         // do not visit the subs
