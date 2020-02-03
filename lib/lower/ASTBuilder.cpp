@@ -21,7 +21,7 @@ namespace {
 /// the bridge to one such instantiation.
 class ASTBuilder {
 public:
-  ASTBuilder() : pgm{new AST::Program}, parents{pgm.get()} {}
+  ASTBuilder() : pgm{new AST::Program}, parents{*pgm.get()} {}
 
   /// Get the result
   std::unique_ptr<AST::Program> result() { return std::move(pgm); }
@@ -319,7 +319,7 @@ private:
     auto &unit = addFunc(AST::FunctionLikeUnit{func, parents.back()});
     funclist = &unit.funcs;
     pushEval(&unit.evals);
-    parents.emplace_back(&unit);
+    parents.emplace_back(unit);
     return true;
   }
 
@@ -336,7 +336,7 @@ private:
     auto &con = addEval(AST::Evaluation{construct, parents.back()});
     con.subs.reset(new AST::EvaluationCollection);
     pushEval(con.subs.get());
-    parents.emplace_back(&con);
+    parents.emplace_back(con);
     return true;
   }
 
@@ -351,7 +351,7 @@ private:
   bool enterModule(const A &func) {
     auto &unit = addUnit(AST::ModuleLikeUnit{func, parents.back()});
     funclist = &unit.funcs;
-    parents.emplace_back(&unit);
+    parents.emplace_back(unit);
     return true;
   }
 
@@ -728,7 +728,7 @@ void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
 
 AST::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
                                         const AST::ParentType &parent)
-    : ProgramUnit{&func, parent} {
+    : ProgramUnit{func, parent} {
   auto &ps{
       std::get<std::optional<parser::Statement<parser::ProgramStmt>>>(func.t)};
   if (ps.has_value()) {
@@ -741,7 +741,7 @@ AST::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
 
 AST::FunctionLikeUnit::FunctionLikeUnit(const parser::FunctionSubprogram &func,
                                         const AST::ParentType &parent)
-    : ProgramUnit{&func, parent} {
+    : ProgramUnit{func, parent} {
   funStmts.push_back(
       &std::get<parser::Statement<parser::FunctionStmt>>(func.t));
   funStmts.push_back(
@@ -750,7 +750,7 @@ AST::FunctionLikeUnit::FunctionLikeUnit(const parser::FunctionSubprogram &func,
 
 AST::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SubroutineSubprogram &func, const AST::ParentType &parent)
-    : ProgramUnit{&func, parent} {
+    : ProgramUnit{func, parent} {
   funStmts.push_back(
       &std::get<parser::Statement<parser::SubroutineStmt>>(func.t));
   funStmts.push_back(
@@ -759,7 +759,7 @@ AST::FunctionLikeUnit::FunctionLikeUnit(
 
 AST::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SeparateModuleSubprogram &func, const AST::ParentType &parent)
-    : ProgramUnit{&func, parent} {
+    : ProgramUnit{func, parent} {
   funStmts.push_back(
       &std::get<parser::Statement<parser::MpSubprogramStmt>>(func.t));
   funStmts.push_back(
@@ -768,14 +768,14 @@ AST::FunctionLikeUnit::FunctionLikeUnit(
 
 AST::ModuleLikeUnit::ModuleLikeUnit(const parser::Module &m,
                                     const AST::ParentType &parent)
-    : ProgramUnit{&m, parent} {
+    : ProgramUnit{m, parent} {
   modStmts.push_back(&std::get<parser::Statement<parser::ModuleStmt>>(m.t));
   modStmts.push_back(&std::get<parser::Statement<parser::EndModuleStmt>>(m.t));
 }
 
 AST::ModuleLikeUnit::ModuleLikeUnit(const parser::Submodule &m,
                                     const AST::ParentType &parent)
-    : ProgramUnit{&m, parent} {
+    : ProgramUnit{m, parent} {
   modStmts.push_back(&std::get<parser::Statement<parser::SubmoduleStmt>>(m.t));
   modStmts.push_back(
       &std::get<parser::Statement<parser::EndSubmoduleStmt>>(m.t));
@@ -783,7 +783,7 @@ AST::ModuleLikeUnit::ModuleLikeUnit(const parser::Submodule &m,
 
 AST::BlockDataUnit::BlockDataUnit(const parser::BlockData &bd,
                                   const AST::ParentType &parent)
-    : ProgramUnit{&bd, parent} {}
+    : ProgramUnit{bd, parent} {}
 
 std::unique_ptr<AST::Program> createAST(const parser::Program &root) {
   ASTBuilder walker;

@@ -37,8 +37,13 @@ struct FunctionLikeUnit;
 // insert AST nodes in any order in O(1) time.
 using EvaluationCollection = std::list<Evaluation>;
 
-using ParentType =
-    std::variant<Program *, ModuleLikeUnit *, FunctionLikeUnit *, Evaluation *>;
+struct ParentType {
+  template <typename A>
+  ParentType(A &parent) : p{&parent} {}
+  const std::variant<Program *, ModuleLikeUnit *, FunctionLikeUnit *,
+                     Evaluation *>
+      p;
+};
 
 /// Flags to describe the impact of parse-trees nodes on the program
 /// control flow. These annotations to parse-tree nodes are later used to
@@ -125,14 +130,14 @@ struct Evaluation {
   using EvalTuple = common::CombineTuples<ActionStmts, OtherStmts, Constructs,
                                           ConstructStmts>;
 
-  /// Hide the non-nullable pointers to the parse-tree node.
+  /// Hide non-nullable pointers to the parse-tree node.
   template <typename A>
   using MakeRefType = const A *const;
   using EvalVariant =
       common::CombineVariants<common::MapTemplate<MakeRefType, EvalTuple>,
                               std::variant<CGJump>>;
-  template <typename T>
-  constexpr auto visit(T visitor) const {
+  template <typename A>
+  constexpr auto visit(A visitor) const {
     return std::visit(common::visitors{
                           [&](const auto *p) { return visitor(*p); },
                           [&](auto &r) { return visitor(r); },
@@ -237,15 +242,16 @@ struct Evaluation {
 /// These units can be function like, module like, or block data
 struct ProgramUnit {
   template <typename A>
-  ProgramUnit(A *ptr, const ParentType &parent) : p{ptr}, parent{parent} {}
+  ProgramUnit(const A &ptr, const ParentType &parent)
+      : p{&ptr}, parent{parent} {}
   ProgramUnit(ProgramUnit &&) = default;
   ProgramUnit(const ProgramUnit &) = delete;
 
-  std::variant<const parser::MainProgram *, const parser::FunctionSubprogram *,
-               const parser::SubroutineSubprogram *, const parser::Module *,
-               const parser::Submodule *,
-               const parser::SeparateModuleSubprogram *,
-               const parser::BlockData *>
+  const std::variant<
+      const parser::MainProgram *, const parser::FunctionSubprogram *,
+      const parser::SubroutineSubprogram *, const parser::Module *,
+      const parser::Submodule *, const parser::SeparateModuleSubprogram *,
+      const parser::BlockData *>
       p;
   ParentType parent;
 };
