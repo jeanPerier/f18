@@ -177,7 +177,7 @@ class CfgBuilder {
                      const A &iter, const A &endif) {
     A i{iter};
     A j{nextFalseTarget(++i, endif)};
-    auto *cstr = std::get<AST::Evaluation *>(e.parent);
+    auto *cstr = std::get<AST::Evaluation *>(e.parent.p);
     AST::CGJump jump{*endif};
     A k{evals.insert(j, AST::Evaluation{std::move(jump), j->parent})};
     if (i == j) {
@@ -202,19 +202,19 @@ class CfgBuilder {
         e.visit(Co::visitors{
             [&](const Pa::CycleStmt &) {
               // FIXME: deal with construct name
-              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              auto *cstr = std::get<AST::Evaluation *>(e.parent.p);
               addSourceToSink(&e, &cstr->subs->front());
             },
             [&](const Pa::ExitStmt &) {
               // FIXME: deal with construct name
-              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              auto *cstr = std::get<AST::Evaluation *>(e.parent.p);
               addSourceToSink(&e, &cstr->subs->back());
             },
             [&](const Pa::GotoStmt &stmt) { addSourceToSink(&e, stmt.v); },
             [&](const Pa::EndDoStmt &) {
               // the END DO is the loop exit landing pad
               // insert a JUMP as the backedge right before the END DO
-              auto *cstr = std::get<AST::Evaluation *>(e.parent);
+              auto *cstr = std::get<AST::Evaluation *>(e.parent.p);
               AST::CGJump jump{cstr->subs->front()};
               AST::Evaluation jumpEval{std::move(jump), iter->parent};
               evals.insert(iter, std::move(jumpEval));

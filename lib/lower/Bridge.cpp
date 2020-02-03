@@ -117,7 +117,7 @@ class FirConverter : public AbstractConverter {
             [&](AST::Evaluation *c) { return inMainProgram(c); },
             [](auto *) { return false; },
         },
-        cstr->parent);
+        cstr->parent.p);
   }
   static const Pa::SubroutineStmt *inSubroutine(AST::Evaluation *cstr) {
     return std::visit(
@@ -126,7 +126,7 @@ class FirConverter : public AbstractConverter {
             [&](AST::Evaluation *c) { return inSubroutine(c); },
             [](auto *) -> const Pa::SubroutineStmt * { return nullptr; },
         },
-        cstr->parent);
+        cstr->parent.p);
   }
   static const Pa::FunctionStmt *inFunction(AST::Evaluation *cstr) {
     return std::visit(
@@ -135,7 +135,7 @@ class FirConverter : public AbstractConverter {
             [&](AST::Evaluation *c) { return inFunction(c); },
             [](auto *) -> const Pa::FunctionStmt * { return nullptr; },
         },
-        cstr->parent);
+        cstr->parent.p);
   }
   static const Pa::MpSubprogramStmt *inMPSubp(AST::Evaluation *cstr) {
     return std::visit(
@@ -144,7 +144,7 @@ class FirConverter : public AbstractConverter {
             [&](AST::Evaluation *c) { return inMPSubp(c); },
             [](auto *) -> const Pa::MpSubprogramStmt * { return nullptr; },
         },
-        cstr->parent);
+        cstr->parent.p);
   }
 
   template <typename A>
