@@ -246,63 +246,27 @@ private:
   std::vector<AST::ParentType> parents;
 };
 
-template <typename A>
-constexpr bool hasErrLabel(const A &stmt) {
-  auto isError{[](const auto &v) {
-    return std::holds_alternative<parser::ErrLabel>(v.u);
-  }};
+template <typename Label, typename A>
+constexpr bool hasLabel(const A &stmt) {
+  auto isLabel{
+      [](const auto &v) { return std::holds_alternative<Label>(v.u); }};
   if constexpr (std::is_same_v<A, parser::ReadStmt> ||
                 std::is_same_v<A, parser::WriteStmt>) {
     return std::any_of(std::begin(stmt.controls), std::end(stmt.controls),
-                       isError);
-  }
-  if constexpr (std::is_same_v<A, parser::WaitStmt> ||
-                std::is_same_v<A, parser::OpenStmt> ||
-                std::is_same_v<A, parser::CloseStmt> ||
-                std::is_same_v<A, parser::BackspaceStmt> ||
-                std::is_same_v<A, parser::EndfileStmt> ||
-                std::is_same_v<A, parser::RewindStmt> ||
-                std::is_same_v<A, parser::FlushStmt>) {
-    return std::any_of(std::begin(stmt.v), std::end(stmt.v), isError);
-  }
-  if constexpr (std::is_same_v<A, parser::InquireStmt>) {
-    const auto &specifiers{std::get<std::list<parser::InquireSpec>>(stmt.u)};
-    return std::any_of(std::begin(specifiers), std::end(specifiers), isError);
-  }
-  return false;
-}
-
-template <typename A>
-constexpr bool hasEorLabel(const A &stmt) {
-  if constexpr (std::is_same_v<A, parser::ReadStmt> ||
-                std::is_same_v<A, parser::WriteStmt>) {
-    for (const auto &control : stmt.controls) {
-      if (std::holds_alternative<parser::EorLabel>(control.u))
-        return true;
-    }
+                       isLabel);
   }
   if constexpr (std::is_same_v<A, parser::WaitStmt>) {
-    for (const auto &waitSpec : stmt.v) {
-      if (std::holds_alternative<parser::EorLabel>(waitSpec.u))
-        return true;
-    }
+    return std::any_of(std::begin(stmt.v), std::end(stmt.v), isLabel);
   }
-  return false;
-}
-
-template <typename A>
-constexpr bool hasEndLabel(const A &stmt) {
-  if constexpr (std::is_same_v<A, parser::ReadStmt> ||
-                std::is_same_v<A, parser::WriteStmt>) {
-    for (const auto &control : stmt.controls) {
-      if (std::holds_alternative<parser::EndLabel>(control.u))
-        return true;
-    }
-  }
-  if constexpr (std::is_same_v<A, parser::WaitStmt>) {
-    for (const auto &waitSpec : stmt.v) {
-      if (std::holds_alternative<parser::EndLabel>(waitSpec.u))
-        return true;
+  if constexpr (std::is_same_v<Label, parser::ErrLabel>) {
+    if constexpr (common::HasMember<
+                      A, std::tuple<parser::OpenStmt, parser::CloseStmt,
+                                    parser::BackspaceStmt, parser::EndfileStmt,
+                                    parser::RewindStmt, parser::FlushStmt>>)
+      return std::any_of(std::begin(stmt.v), std::end(stmt.v), isLabel);
+    if constexpr (std::is_same_v<A, parser::InquireStmt>) {
+      const auto &specifiers{std::get<std::list<parser::InquireSpec>>(stmt.u)};
+      return std::any_of(std::begin(specifiers), std::end(specifiers), isLabel);
     }
   }
   return false;
@@ -329,14 +293,6 @@ void altRet(AST::Evaluation &evaluation, const parser::CallStmt &callStmt,
     evaluation.setCFG(AST::CFGAnnotation::Switch, cstr);
 }
 
-template <typename A>
-void ioLabel(AST::Evaluation &evaluation, const A &statement,
-             AST::Evaluation *cstr) {
-  if (hasErrLabel(statement) || hasEorLabel(statement) ||
-      hasEndLabel(statement))
-    evaluation.setCFG(AST::CFGAnnotation::IoSwitch, cstr);
-}
-
 /// \param cstr points to the current construct. It may be null at the top-level
 /// of a FunctionLikeUnit.
 void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
@@ -350,23 +306,15 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
       // assume that the entry and exit are both possible branch targets
       nextIsTarget = true;
     }
+
     if (eval.isActionOrGenerated() && eval.lab.has_value())
       eval.isTarget = true;
     eval.visit(common::visitors{
-        [&](const parser::BackspaceStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
         [&](const parser::CallStmt &statement) {
           altRet(eval, statement, cstr);
         },
-        [&](const parser::CloseStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
         [&](const parser::CycleStmt &) {
           eval.setCFG(AST::CFGAnnotation::Goto, cstr);
-        },
-        [&](const parser::EndfileStmt &statement) {
-          ioLabel(eval, statement, cstr);
         },
         [&](const parser::ExitStmt &) {
           eval.setCFG(AST::CFGAnnotation::Goto, cstr);
@@ -374,38 +322,17 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
         [&](const parser::FailImageStmt &) {
           eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
         },
-        [&](const parser::FlushStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
         [&](const parser::GotoStmt &) {
           eval.setCFG(AST::CFGAnnotation::Goto, cstr);
         },
         [&](const parser::IfStmt &) {
           eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
         },
-        [&](const parser::InquireStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
-        [&](const parser::OpenStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
-        [&](const parser::ReadStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
         [&](const parser::ReturnStmt &) {
           eval.setCFG(AST::CFGAnnotation::Return, cstr);
         },
-        [&](const parser::RewindStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
         [&](const parser::StopStmt &) {
           eval.setCFG(AST::CFGAnnotation::Terminate, cstr);
-        },
-        [&](const parser::WaitStmt &statement) {
-          ioLabel(eval, statement, cstr);
-        },
-        [&](const parser::WriteStmt &statement) {
-          ioLabel(eval, statement, cstr);
         },
         [&](const parser::ArithmeticIfStmt &) {
           eval.setCFG(AST::CFGAnnotation::Switch, cstr);
@@ -427,15 +354,9 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
           eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
         },
         [&](AST::CGJump &) { eval.setCFG(AST::CFGAnnotation::Goto, cstr); },
-        [&](const parser::EndAssociateStmt &) { eval.isTarget = true; },
-        [&](const parser::EndBlockStmt &) { eval.isTarget = true; },
         [&](const parser::SelectCaseStmt &) {
           eval.setCFG(AST::CFGAnnotation::Switch, cstr);
         },
-        [&](const parser::CaseStmt &) { eval.isTarget = true; },
-        [&](const parser::EndSelectStmt &) { eval.isTarget = true; },
-        [&](const parser::EndChangeTeamStmt &) { eval.isTarget = true; },
-        [&](const parser::EndCriticalStmt &) { eval.isTarget = true; },
         [&](const parser::NonLabelDoStmt &) {
           eval.isTarget = true;
           eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
@@ -450,16 +371,12 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
         [&](const parser::ElseIfStmt &) {
           eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
         },
-        [&](const parser::ElseStmt &) { eval.isTarget = true; },
-        [&](const parser::EndIfStmt &) { eval.isTarget = true; },
         [&](const parser::SelectRankStmt &) {
           eval.setCFG(AST::CFGAnnotation::Switch, cstr);
         },
-        [&](const parser::SelectRankCaseStmt &) { eval.isTarget = true; },
         [&](const parser::SelectTypeStmt &) {
           eval.setCFG(AST::CFGAnnotation::Switch, cstr);
         },
-        [&](const parser::TypeGuardStmt &) { eval.isTarget = true; },
         [&](const parser::WhereConstruct &) {
           // mark the WHERE as if it were a DO loop
           eval.isTarget = true;
@@ -472,14 +389,49 @@ void annotateEvalListCFG(AST::EvaluationCollection &evaluationCollection,
           eval.isTarget = true;
           eval.setCFG(AST::CFGAnnotation::CondGoto, cstr);
         },
-        [&](const parser::ElsewhereStmt &) { eval.isTarget = true; },
-        [&](const parser::EndWhereStmt &) { eval.isTarget = true; },
         [&](const parser::ForallConstructStmt &) {
           eval.isTarget = true;
           eval.setCFG(AST::CFGAnnotation::Iterative, cstr);
         },
-        [&](const parser::EndForallStmt &) { eval.isTarget = true; },
-        [](const auto &) { /* do nothing */ },
+
+        [&](const auto &stmt) {
+          // Handle statements with similar impact on control flow
+          using IoStmts = std::tuple<parser::BackspaceStmt, parser::CloseStmt,
+                                     parser::EndfileStmt, parser::FlushStmt,
+                                     parser::InquireStmt, parser::OpenStmt,
+                                     parser::ReadStmt, parser::RewindStmt,
+                                     parser::WaitStmt, parser::WriteStmt>;
+
+          using TargetStmts =
+              std::tuple<parser::EndAssociateStmt, parser::EndBlockStmt,
+                         parser::CaseStmt, parser::EndSelectStmt,
+                         parser::EndChangeTeamStmt, parser::EndCriticalStmt,
+                         parser::ElseStmt, parser::EndIfStmt,
+                         parser::SelectRankCaseStmt, parser::TypeGuardStmt,
+                         parser::ElsewhereStmt, parser::EndWhereStmt,
+                         parser::EndForallStmt>;
+
+          using DoNothingConstructStmts =
+              std::tuple<parser::BlockStmt, parser::AssociateStmt,
+                         parser::CriticalStmt, parser::ChangeTeamStmt>;
+
+          using A = std::decay_t<decltype(stmt)>;
+          if constexpr (common::HasMember<A, IoStmts>) {
+            if (hasLabel<parser::ErrLabel>(stmt) ||
+                hasLabel<parser::EorLabel>(stmt) ||
+                hasLabel<parser::EndLabel>(stmt))
+              eval.setCFG(AST::CFGAnnotation::IoSwitch, cstr);
+          } else if constexpr (common::HasMember<A, TargetStmts>) {
+            eval.isTarget = true;
+          } else if constexpr (common::HasMember<A, DoNothingConstructStmts>) {
+            // Explicitly do nothing for these construct statements
+          } else {
+            static_assert(!AST::isConstructStmts<A>,
+                          "All ConstructStmts impact on the control flow "
+                          "should be explicitly handled");
+          }
+          /* else do nothing */
+        },
     });
   }
 }
