@@ -16,6 +16,52 @@
 namespace Fortran::lower {
 namespace {
 
+/// Helpers to unveil parser node inside parser::Statement<>,
+/// parser::UnlabeledStatement, and common::Indirection<>
+template <typename A>
+struct RemoveIndirectionHelper {
+  using Type = A;
+  static constexpr const Type &unwrap(const A &a) { return a; }
+};
+template <typename A>
+struct RemoveIndirectionHelper<common::Indirection<A>> {
+  using Type = A;
+  static constexpr const Type &unwrap(const common::Indirection<A> &a) {
+    return a.value();
+  }
+};
+
+template <typename A>
+const auto &removeIndirection(const A &a) {
+  return RemoveIndirectionHelper<A>::unwrap(a);
+}
+
+template <typename A>
+struct UnwrapStmt {
+  static constexpr bool isStmt{false};
+};
+template <typename A>
+struct UnwrapStmt<parser::Statement<A>> {
+  static constexpr bool isStmt{true};
+  using Type = typename RemoveIndirectionHelper<A>::Type;
+  constexpr UnwrapStmt(const parser::Statement<A> &a)
+      : unwrapped{removeIndirection(a.statement)}, pos{a.source}, lab{a.label} {
+  }
+  const Type &unwrapped;
+  parser::CharBlock pos;
+  std::optional<parser::Label> lab;
+};
+template <typename A>
+struct UnwrapStmt<parser::UnlabeledStatement<A>> {
+  static constexpr bool isStmt{true};
+  using Type = typename RemoveIndirectionHelper<A>::Type;
+  constexpr UnwrapStmt(const parser::UnlabeledStatement<A> &a)
+      : unwrapped{removeIndirection(a.statement)}, pos{a.source} {}
+  const Type &unwrapped;
+  parser::CharBlock pos;
+  std::optional<parser::Label> lab;
+};
+
 /// The instantiation of a parse tree visitor (Pre and Post) is extremely
 /// expensive in terms of compile and link time, so one goal here is to limit
 /// the bridge to one such instantiation.
@@ -27,157 +73,48 @@ public:
   std::unique_ptr<AST::Program> result() { return std::move(pgm); }
 
   template <typename A>
-  constexpr bool Pre(const A &) {
+  constexpr bool Pre(const A &a) {
+    if constexpr (AST::isFunctionLike<A>) {
+      return enterFunc(a);
+    } else if constexpr (AST::isConstruct<A>) {
+      return enterConstruct(a);
+    }
     return true;
   }
+
   template <typename A>
-  constexpr void Post(const A &) {}
+  constexpr void Post(const A &a) {
+    if constexpr (AST::isFunctionLike<A>) {
+      exitFunc();
+    } else if constexpr (AST::isConstruct<A>) {
+      exitConstruct();
+    } else if constexpr (UnwrapStmt<A>::isStmt) {
+      using T = typename UnwrapStmt<A>::Type;
+      // Node "a" being visited has one of the following types:
+      // Statement<T>, Statement<Indirection<T>, UnlabeledStatement<T>,
+      // or UnlabeledStatement<Indirection<T>>
+      auto stmt{UnwrapStmt<A>(a)};
+      if constexpr (AST::isConstructStmts<T> || AST::isOtherStmt<T>) {
+        addEval(AST::Evaluation{stmt.unwrapped, parents.back(), stmt.pos,
+                                stmt.lab});
+      } else if constexpr (std::is_same_v<T, parser::ActionStmt>) {
+        addEval(makeEvalAction(stmt.unwrapped, stmt.pos, stmt.lab));
+      }
+    }
+  }
 
   // Module like
-
   bool Pre(const parser::Module &node) { return enterModule(node); }
   bool Pre(const parser::Submodule &node) { return enterModule(node); }
 
   void Post(const parser::Module &) { exitModule(); }
   void Post(const parser::Submodule &) { exitModule(); }
 
-  // Function like
-
-  bool Pre(const parser::MainProgram &node) { return enterFunc(node); }
-  bool Pre(const parser::FunctionSubprogram &node) { return enterFunc(node); }
-  bool Pre(const parser::SubroutineSubprogram &node) { return enterFunc(node); }
-  bool Pre(const parser::SeparateModuleSubprogram &node) {
-    return enterFunc(node);
-  }
-
-  void Post(const parser::MainProgram &) { exitFunc(); }
-  void Post(const parser::FunctionSubprogram &) { exitFunc(); }
-  void Post(const parser::SubroutineSubprogram &) { exitFunc(); }
-  void Post(const parser::SeparateModuleSubprogram &) { exitFunc(); }
-
   // Block data
-
   void Post(const parser::BlockData &node) {
     addUnit(AST::BlockDataUnit{node, parents.back()});
   }
 
-  //
-  // Action statements
-  //
-
-  void Post(const parser::Statement<parser::ActionStmt> &s) {
-    addEval(makeEvalAction(s));
-  }
-  void Post(const parser::UnlabeledStatement<parser::ActionStmt> &s) {
-    addEval(makeEvalAction(s));
-  }
-
-  //
-  // Non-executable statements
-  //
-
-  void Post(const parser::Statement<common::Indirection<parser::FormatStmt>>
-                &statement) {
-    addEval(makeEvalIndirect(statement));
-  }
-  void Post(const parser::Statement<common::Indirection<parser::EntryStmt>>
-                &statement) {
-    addEval(makeEvalIndirect(statement));
-  }
-  void Post(const parser::Statement<common::Indirection<parser::DataStmt>>
-                &statement) {
-    addEval(makeEvalIndirect(statement));
-  }
-  void Post(const parser::Statement<common::Indirection<parser::NamelistStmt>>
-                &statement) {
-    addEval(makeEvalIndirect(statement));
-  }
-
-  //
-  // Construct statements
-  //
-
-  void Post(const parser::Statement<parser::AssociateStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndAssociateStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::BlockStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndBlockStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::SelectCaseStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::CaseStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndSelectStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::ChangeTeamStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndChangeTeamStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::CriticalStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndCriticalStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::NonLabelDoStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndDoStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::IfThenStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::ElseIfStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::ElseStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndIfStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::SelectRankStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::SelectRankCaseStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::SelectTypeStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::TypeGuardStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::WhereConstructStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::MaskedElsewhereStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::ElsewhereStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndWhereStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::ForallConstructStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
-  void Post(const parser::Statement<parser::EndForallStmt> &statement) {
-    addEval(makeEvalDirect(statement));
-  }
   // Get rid of production wrapper
   void Post(const parser::UnlabeledStatement<parser::ForallAssignmentStmt>
                 &statement) {
@@ -196,120 +133,21 @@ public:
         statement.statement.u));
   }
 
-  //
-  // Constructs (enter and exit)
-  //
-
-  bool Pre(const parser::AssociateConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::BlockConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::CaseConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::ChangeTeamConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::CriticalConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::DoConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::IfConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::SelectRankConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::SelectTypeConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::WhereConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::ForallConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::CompilerDirective &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::OpenMPConstruct &construct) {
-    return enterConstruct(construct);
-  }
-  bool Pre(const parser::OmpEndLoopDirective &construct) {
-    return enterConstruct(construct);
-  }
-
-  void Post(const parser::AssociateConstruct &) { exitConstruct(); }
-  void Post(const parser::BlockConstruct &) { exitConstruct(); }
-  void Post(const parser::CaseConstruct &) { exitConstruct(); }
-  void Post(const parser::ChangeTeamConstruct &) { exitConstruct(); }
-  void Post(const parser::CriticalConstruct &) { exitConstruct(); }
-  void Post(const parser::DoConstruct &) { exitConstruct(); }
-  void Post(const parser::IfConstruct &) { exitConstruct(); }
-  void Post(const parser::SelectRankConstruct &) { exitConstruct(); }
-  void Post(const parser::SelectTypeConstruct &) { exitConstruct(); }
-  void Post(const parser::WhereConstruct &) { exitConstruct(); }
-  void Post(const parser::ForallConstruct &) { exitConstruct(); }
-  void Post(const parser::CompilerDirective &) { exitConstruct(); }
-  void Post(const parser::OpenMPConstruct &) { exitConstruct(); }
-  void Post(const parser::OmpEndLoopDirective &) { exitConstruct(); }
-
 private:
   // ActionStmt has a couple of non-conforming cases, which get handled
   // explicitly here.  The other cases use an Indirection, which we discard in
   // the AST.
-  AST::Evaluation
-  makeEvalAction(const parser::Statement<parser::ActionStmt> &statement) {
+  AST::Evaluation makeEvalAction(const parser::ActionStmt &statement,
+                                 parser::CharBlock pos,
+                                 std::optional<parser::Label> lab) {
     return std::visit(
         common::visitors{
-            [&](const parser::ContinueStmt &x) {
-              return AST::Evaluation{x, parents.back(), statement.source,
-                                     statement.label};
-            },
-            [&](const parser::FailImageStmt &x) {
-              return AST::Evaluation{x, parents.back(), statement.source,
-                                     statement.label};
-            },
             [&](const auto &x) {
-              return AST::Evaluation{x.value(), parents.back(),
-                                     statement.source, statement.label};
+              return AST::Evaluation{removeIndirection(x), parents.back(), pos,
+                                     lab};
             },
         },
-        statement.statement.u);
-  }
-  AST::Evaluation makeEvalAction(
-      const parser::UnlabeledStatement<parser::ActionStmt> &statement) {
-    return std::visit(
-        common::visitors{
-            [&](const parser::ContinueStmt &x) {
-              return AST::Evaluation{x, parents.back(), statement.source, {}};
-            },
-            [&](const parser::FailImageStmt &x) {
-              return AST::Evaluation{x, parents.back(), statement.source, {}};
-            },
-            [&](const auto &x) {
-              return AST::Evaluation{
-                  x.value(), parents.back(), statement.source, {}};
-            },
-        },
-        statement.statement.u);
-  }
-
-  template <typename A>
-  AST::Evaluation
-  makeEvalIndirect(const parser::Statement<common::Indirection<A>> &statement) {
-    return AST::Evaluation{statement.statement.value(), parents.back(),
-                           statement.source, statement.label};
-  }
-
-  template <typename A>
-  AST::Evaluation makeEvalDirect(const parser::Statement<A> &statement) {
-    return AST::Evaluation{statement.statement, parents.back(),
-                           statement.source, statement.label};
+        statement.u);
   }
 
   // When we enter a function-like structure, we want to build a new unit and

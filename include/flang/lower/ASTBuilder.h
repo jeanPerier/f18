@@ -110,18 +110,26 @@ using ConstructStmts = std::tuple<
     parser::MaskedElsewhereStmt, parser::ElsewhereStmt, parser::EndWhereStmt,
     parser::ForallConstructStmt, parser::EndForallStmt>;
 
-/// is `A` a construct (or directive)?
+template <typename A>
+constexpr static bool isActionStmt{common::HasMember<A, ActionStmts>};
+
 template <typename A>
 constexpr static bool isConstruct{common::HasMember<A, Constructs>};
+
+template <typename A>
+constexpr static bool isConstructStmts{common::HasMember<A, ConstructStmts>};
 
 template <typename A>
 constexpr static bool isOtherStmt{common::HasMember<A, OtherStmts>};
 
 template <typename A>
-constexpr static bool isActionStmt{common::HasMember<A, ActionStmts>};
+constexpr static bool isGenerated{std::is_same_v<A, CGJump>};
 
 template <typename A>
-constexpr static bool isGenerated{std::is_same_v<A, CGJump>};
+constexpr static bool isFunctionLike{common::HasMember<
+    A, std::tuple<parser::MainProgram, parser::FunctionSubprogram,
+                  parser::SubroutineSubprogram,
+                  parser::SeparateModuleSubprogram>>};
 
 /// Function-like units can contains lists of evaluations.  These can be
 /// (simple) statements or constructs, where a construct contains its own
