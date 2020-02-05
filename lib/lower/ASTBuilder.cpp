@@ -16,52 +16,6 @@
 namespace Fortran::lower {
 namespace {
 
-/// Helpers to unveil parser node inside parser::Statement<>,
-/// parser::UnlabeledStatement, and common::Indirection<>
-template <typename A>
-struct RemoveIndirectionHelper {
-  using Type = A;
-  static constexpr const Type &unwrap(const A &a) { return a; }
-};
-template <typename A>
-struct RemoveIndirectionHelper<common::Indirection<A>> {
-  using Type = A;
-  static constexpr const Type &unwrap(const common::Indirection<A> &a) {
-    return a.value();
-  }
-};
-
-template <typename A>
-const auto &removeIndirection(const A &a) {
-  return RemoveIndirectionHelper<A>::unwrap(a);
-}
-
-template <typename A>
-struct UnwrapStmt {
-  static constexpr bool isStmt{false};
-};
-template <typename A>
-struct UnwrapStmt<parser::Statement<A>> {
-  static constexpr bool isStmt{true};
-  using Type = typename RemoveIndirectionHelper<A>::Type;
-  constexpr UnwrapStmt(const parser::Statement<A> &a)
-      : unwrapped{removeIndirection(a.statement)}, pos{a.source}, lab{a.label} {
-  }
-  const Type &unwrapped;
-  parser::CharBlock pos;
-  std::optional<parser::Label> lab;
-};
-template <typename A>
-struct UnwrapStmt<parser::UnlabeledStatement<A>> {
-  static constexpr bool isStmt{true};
-  using Type = typename RemoveIndirectionHelper<A>::Type;
-  constexpr UnwrapStmt(const parser::UnlabeledStatement<A> &a)
-      : unwrapped{removeIndirection(a.statement)}, pos{a.source} {}
-  const Type &unwrapped;
-  parser::CharBlock pos;
-  std::optional<parser::Label> lab;
-};
-
 /// The instantiation of a parse tree visitor (Pre and Post) is extremely
 /// expensive in terms of compile and link time, so one goal here is to limit
 /// the bridge to one such instantiation.
@@ -88,12 +42,12 @@ public:
       exitFunc();
     } else if constexpr (AST::isConstruct<A>) {
       exitConstruct();
-    } else if constexpr (UnwrapStmt<A>::isStmt) {
-      using T = typename UnwrapStmt<A>::Type;
+    } else if constexpr (AST::UnwrapStmt<A>::isStmt) {
+      using T = typename AST::UnwrapStmt<A>::Type;
       // Node "a" being visited has one of the following types:
       // Statement<T>, Statement<Indirection<T>, UnlabeledStatement<T>,
       // or UnlabeledStatement<Indirection<T>>
-      auto stmt{UnwrapStmt<A>(a)};
+      auto stmt{AST::UnwrapStmt<A>(a)};
       if constexpr (AST::isConstructStmts<T> || AST::isOtherStmt<T>) {
         addEval(AST::Evaluation{stmt.unwrapped, parents.back(), stmt.pos,
                                 stmt.lab});
@@ -143,8 +97,8 @@ private:
     return std::visit(
         common::visitors{
             [&](const auto &x) {
-              return AST::Evaluation{removeIndirection(x), parents.back(), pos,
-                                     lab};
+              return AST::Evaluation{AST::removeIndirection(x), parents.back(),
+                                     pos, lab};
             },
         },
         statement.u);

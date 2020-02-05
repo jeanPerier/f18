@@ -319,5 +319,33 @@ common::IfNoLvalue<typename VISITOR::Result, VISITOR> SearchTypes(
   return SearchTypesHelper<0, VISITOR>(
       std::move(visitor), std::move(defaultResult));
 }
+
+// Given a variant or tuple type TUPLEorVARIANT, and a PREDICATE of the form:
+//   template<typename A>
+//   struct PREDICATE {
+//      static constexpr bool value{/* true or false*/};
+//   };
+// GetTypesIf define a tuple type containing all the types A from TUPLEorVARIANT
+// for which PREDICATE<A>::value is true.
+template<template<typename> class PREDICATE, typename... T>
+using GetTypesInTupleIf =
+    common::CombineTuples<typename std::conditional<PREDICATE<T>::value,
+        std::tuple<T>, std::tuple<>>::type...>;
+
+template<template<typename> class PREDICATE, typename T>
+struct GetTypesIfHelper {};
+
+template<template<typename> class PREDICATE, typename... T>
+struct GetTypesIfHelper<PREDICATE, std::tuple<T...>> {
+  using Type = GetTypesInTupleIf<PREDICATE, T...>;
+};
+
+template<template<typename> class PREDICATE, typename... T>
+struct GetTypesIfHelper<PREDICATE, std::variant<T...>> {
+  using Type = GetTypesInTupleIf<PREDICATE, T...>;
+};
+
+template<template<typename> class PREDICATE, typename TUPLEorVARIANT>
+using GetTypesIf = typename GetTypesIfHelper<PREDICATE, TUPLEorVARIANT>::Type;
 }
 #endif  // FORTRAN_COMMON_TEMPLATE_H_

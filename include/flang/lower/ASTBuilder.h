@@ -70,35 +70,96 @@ struct CGJump {
   Evaluation &target;
 };
 
-/// Classify the parse-tree nodes from ExecutablePartConstruct
+/// Helpers to unveil parser node inside parser::Statement<>,
+/// parser::UnlabeledStatement, and common::Indirection<>
 
-using ActionStmts = std::tuple<
-    parser::AllocateStmt, parser::AssignmentStmt, parser::BackspaceStmt,
-    parser::CallStmt, parser::CloseStmt, parser::ContinueStmt,
-    parser::CycleStmt, parser::DeallocateStmt, parser::EndfileStmt,
-    parser::EventPostStmt, parser::EventWaitStmt, parser::ExitStmt,
-    parser::FailImageStmt, parser::FlushStmt, parser::FormTeamStmt,
-    parser::GotoStmt, parser::IfStmt, parser::InquireStmt, parser::LockStmt,
-    parser::NullifyStmt, parser::OpenStmt, parser::PointerAssignmentStmt,
-    parser::PrintStmt, parser::ReadStmt, parser::ReturnStmt, parser::RewindStmt,
-    parser::StopStmt, parser::SyncAllStmt, parser::SyncImagesStmt,
-    parser::SyncMemoryStmt, parser::SyncTeamStmt, parser::UnlockStmt,
-    parser::WaitStmt, parser::WhereStmt, parser::WriteStmt,
-    parser::ComputedGotoStmt, parser::ForallStmt, parser::ArithmeticIfStmt,
-    parser::AssignStmt, parser::AssignedGotoStmt, parser::PauseStmt>;
+template <typename A>
+struct RemoveIndirectionHelper {
+  using Type = A;
+  static constexpr const Type &unwrap(const A &a) { return a; }
+};
+template <typename A>
+struct RemoveIndirectionHelper<common::Indirection<A>> {
+  using Type = A;
+  static constexpr const Type &unwrap(const common::Indirection<A> &a) {
+    return a.value();
+  }
+};
 
-using OtherStmts = std::tuple<parser::FormatStmt, parser::EntryStmt,
-                              parser::DataStmt, parser::NamelistStmt>;
+template <typename A>
+const auto &removeIndirection(const A &a) {
+  return AST::RemoveIndirectionHelper<A>::unwrap(a);
+}
 
-using Constructs =
-    std::tuple<parser::AssociateConstruct, parser::BlockConstruct,
-               parser::CaseConstruct, parser::ChangeTeamConstruct,
-               parser::CriticalConstruct, parser::DoConstruct,
-               parser::IfConstruct, parser::SelectRankConstruct,
-               parser::SelectTypeConstruct, parser::WhereConstruct,
-               parser::ForallConstruct, parser::CompilerDirective,
-               parser::OpenMPConstruct, parser::OmpEndLoopDirective>;
+template <typename A>
+struct UnwrapStmt {
+  static constexpr bool isStmt{false};
+};
 
+template <typename A>
+struct UnwrapStmt<parser::Statement<A>> {
+  static constexpr bool isStmt{true};
+  using Type = typename AST::RemoveIndirectionHelper<A>::Type;
+  constexpr UnwrapStmt(const parser::Statement<A> &a)
+      : unwrapped{removeIndirection(a.statement)}, pos{a.source}, lab{a.label} {
+  }
+  const Type &unwrapped;
+  parser::CharBlock pos;
+  std::optional<parser::Label> lab;
+};
+
+template <typename A>
+struct UnwrapStmt<parser::UnlabeledStatement<A>> {
+  static constexpr bool isStmt{true};
+  using Type = typename AST::RemoveIndirectionHelper<A>::Type;
+  constexpr UnwrapStmt(const parser::UnlabeledStatement<A> &a)
+      : unwrapped{removeIndirection(a.statement)}, pos{a.source} {}
+  const Type &unwrapped;
+  parser::CharBlock pos;
+  std::optional<parser::Label> lab;
+};
+
+template <typename A>
+using RemoveIndirection = typename RemoveIndirectionHelper<A>::Type;
+template <typename A>
+using RemoveIndirectionFromTypes =
+    common::MapTemplate<RemoveIndirection, A, std::tuple>;
+
+template <typename A>
+using RemoveStatementAndIndirection = typename UnwrapStmt<A>::Type;
+
+template <typename A>
+using RemoveStatementAndIndirectionFromTypes =
+    common::MapTemplate<RemoveStatementAndIndirection, A, std::tuple>;
+
+template <typename A>
+struct IsStatement {
+  static constexpr bool value{UnwrapStmt<A>::isStmt};
+};
+
+template <typename A>
+struct IsNotStatement {
+  static constexpr bool value{!UnwrapStmt<A>::isStmt};
+};
+
+/// Classify the parse-tree nodes from ExecutablePartConstruct that matters for
+/// lowering and remove the Statement<> and Indirection<> type wrappers.
+using ActionStmts = RemoveIndirectionFromTypes<decltype(parser::ActionStmt::u)>;
+
+using ConstructsWithBoilerPlate =
+    common::GetTypesIf<IsNotStatement,
+                       decltype(parser::ExecutableConstruct::u)>;
+using Constructs = RemoveIndirectionFromTypes<ConstructsWithBoilerPlate>;
+
+using OtherStmtsWithBoilerPlate =
+    common::GetTypesIf<IsStatement,
+                       decltype(parser::ExecutionPartConstruct ::u)>;
+using OtherStmts =
+    RemoveStatementAndIndirectionFromTypes<OtherStmtsWithBoilerPlate>;
+
+/// These are the statements inside constructs that are not OtherStmts and
+/// ActionStmts. Extracting them automatically would require a great deal of
+/// cryptic SFINAE and metaprograming. Hence, they are listed manually here.
 using ConstructStmts = std::tuple<
     parser::AssociateStmt, parser::EndAssociateStmt, parser::BlockStmt,
     parser::EndBlockStmt, parser::SelectCaseStmt, parser::CaseStmt,
