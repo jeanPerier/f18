@@ -1,4 +1,4 @@
-//===-- include/flang/lower/ASTBuilder.h ------------------------*- C++ -*-===//
+//===-- include/flang/lower/PFTBuilder.h ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,26 +6,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef FORTRAN_LOWER_AST_BUILDER_H_
-#define FORTRAN_LOWER_AST_BUILDER_H_
+#ifndef FORTRAN_LOWER_PFT_BUILDER_H_
+#define FORTRAN_LOWER_PFT_BUILDER_H_
 
 #include "flang/common/template.h"
 #include "flang/parser/parse-tree.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 
-/// Build a light-weight AST to help with lowering to FIR.  The AST will
-/// capture pointers back into the parse tree, so the parse tree data structure
-/// may <em>not</em> be changed between the construction of the AST and all of
-/// its uses.
+/// Build a light-weight tree over the parse-tree to help with lowering to FIR.
+/// It is named Pre-FIR Tree (PFT) to underline it has no other usage than
+/// helping lowering to FIR.
+/// The PFT will capture pointers back into the parse tree, so the parse tree
+/// data structure may <em>not</em> be changed between the construction of the
+/// PFT and all of its uses.
 ///
-/// The AST captures a structured view of the program.  The program is a list of
+/// The PFT captures a structured view of the program.  The program is a list of
 /// units.  Function like units will contain lists of evaluations.  Evaluations
 /// are either statements or constructs, where a construct contains a list of
-/// evaluations.  The resulting AST structure can then be used to create FIR.
+/// evaluations. The resulting PFT structure can then be used to create FIR.
 
 namespace Fortran::lower {
-namespace AST {
+namespace PFT {
 
 struct Evaluation;
 struct Program;
@@ -34,7 +36,7 @@ struct FunctionLikeUnit;
 
 // TODO: A collection of Evaluations can obviously be any of the container
 // types; leaving this as a std::list _for now_ because we reserve the right to
-// insert AST nodes in any order in O(1) time.
+// insert PFT nodes in any order in O(1) time.
 using EvaluationCollection = std::list<Evaluation>;
 
 struct ParentType {
@@ -64,7 +66,7 @@ enum class CFGAnnotation {
 /// Compiler-generated jump
 ///
 /// This is used to convert implicit control-flow edges to explicit form in the
-/// decorated AST
+/// decorated PFT
 struct CGJump {
   CGJump(Evaluation &to) : target{to} {}
   Evaluation &target;
@@ -188,7 +190,7 @@ struct Evaluation {
   /// Construct ctor
   template <typename A>
   Evaluation(const A &a, const ParentType &parent) : u{&a}, parent{parent} {
-    static_assert(AST::isConstruct<A>, "must be a construct");
+    static_assert(PFT::isConstruct<A>, "must be a construct");
   }
 
   constexpr bool isActionOrGenerated() const {
@@ -216,10 +218,10 @@ struct Evaluation {
     setBranches(cstr);
   }
 
-  /// Is this evaluation a control-flow origin? (The AST must be annotated)
+  /// Is this evaluation a control-flow origin? (The PFT must be annotated)
   bool isControlOrigin() const { return cfg != CFGAnnotation::None; }
 
-  /// Is this evaluation a control-flow target? (The AST must be annotated)
+  /// Is this evaluation a control-flow target? (The PFT must be annotated)
   bool isControlTarget() const { return isTarget; }
 
   /// Set the containsBranches flag iff this evaluation (a construct) contains
@@ -342,7 +344,7 @@ struct BlockDataUnit : public ProgramUnit {
   BlockDataUnit(const BlockDataUnit &) = delete;
 };
 
-/// A Program is the top-level AST
+/// A Program is the top-level PFT
 struct Program {
   using Units = std::variant<FunctionLikeUnit, ModuleLikeUnit, BlockDataUnit>;
 
@@ -356,19 +358,19 @@ private:
   std::list<Units> units;
 };
 
-} // namespace AST
+} // namespace PFT
 
-/// Create an AST from the parse tree
-std::unique_ptr<AST::Program> createAST(const parser::Program &root);
+/// Create an PFT from the parse tree
+std::unique_ptr<PFT::Program> createPFT(const parser::Program &root);
 
-/// Decorate the AST with control flow annotations
+/// Decorate the PFT with control flow annotations
 ///
-/// The AST must be decorated with control-flow annotations to prepare it for
+/// The PFT must be decorated with control-flow annotations to prepare it for
 /// use in generating a CFG-like structure.
-void annotateControl(AST::Program &ast);
+void annotateControl(PFT::Program &);
 
-void dumpAST(llvm::raw_ostream &o, AST::Program &ast);
+void dumpPFT(llvm::raw_ostream &o, PFT::Program &);
 
 } // namespace Fortran::lower
 
-#endif // FORTRAN_LOWER_AST_BUILDER_H_
+#endif // FORTRAN_LOWER_PFT_BUILDER_H_
