@@ -10,8 +10,8 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 add_executable(f18
-  f18.cc
-  dump.cc
+  f18.cpp
+  dump.cpp
 )
 
 target_link_libraries(f18
@@ -21,8 +21,8 @@ target_link_libraries(f18
 )
 
 add_executable(f18-parse-demo
-  f18-parse-demo.cc
-  stub-evaluate.cc
+  f18-parse-demo.cpp
+  stub-evaluate.cpp
 )
 
 target_link_libraries(f18-parse-demo
@@ -54,15 +54,15 @@ foreach(filename ${MODULES})
     set(depends ${include}/__fortran_builtins.mod)
   endif()
   add_custom_command(OUTPUT ${include}/${filename}.mod
-    COMMAND f18 -fparse-only -I${include}
-      ${PROJECT_SOURCE_DIR}/module/${filename}.f90
+    COMMAND f18 -fparse-only -fdebug-semantics -I${include} ${FLANG_SOURCE_DIR}/module/${filename}.f90
     WORKING_DIRECTORY ${include}
-    DEPENDS f18 ${PROJECT_SOURCE_DIR}/module/${filename}.f90 ${depends}
+    DEPENDS f18 ${FLANG_SOURCE_DIR}/module/${filename}.f90 ${depends}
   )
   add_custom_command(OUTPUT ${include}/${filename}.f18.mod
     DEPENDS ${include}/${filename}.mod
     COMMAND ${CMAKE_COMMAND} -E
-      copy ${include}/${filename}.mod ${include}/${filename}.f18.mod)
+      copy ${include}/${filename}.mod ${include}/${filename}.f18.mod
+  )
   list(APPEND MODULE_FILES ${include}/${filename}.mod)
   list(APPEND MODULE_FILES ${include}/${filename}.f18.mod)
   install(FILES ${include}/${filename}.mod DESTINATION include)
