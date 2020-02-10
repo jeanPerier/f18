@@ -119,7 +119,7 @@ template <typename A>
 constexpr static bool isConstruct{common::HasMember<A, Constructs>};
 
 template <typename A>
-constexpr static bool isConstructStmts{common::HasMember<A, ConstructStmts>};
+constexpr static bool isConstructStmt{common::HasMember<A, ConstructStmts>};
 
 template <typename A>
 constexpr static bool isOtherStmt{common::HasMember<A, OtherStmts>};
@@ -206,7 +206,11 @@ struct Evaluation {
     return visit(common::visitors{
         [](auto &r) {
           using T = std::decay_t<decltype(r)>;
-          return isActionStmt<T> || isOtherStmt<T>;
+          static constexpr bool isStmt{isActionStmt<T> || isOtherStmt<T> ||
+                                       isConstructStmt<T>};
+          static_assert(!(isStmt && PFT::isConstruct<T>),
+                        "statement classification is inconsistent");
+          return isStmt;
         },
     });
   }
@@ -228,8 +232,16 @@ struct Evaluation {
   /// control flow
   void setBranches() { containsBranches = true; }
 
-  constexpr EvaluationCollection *getConstructEvals() {
-    return isStmt() ? nullptr : subs.get();
+  EvaluationCollection *getConstructEvals() {
+    auto *evals{subs.get()};
+    if (isStmt() && !evals) {
+      return nullptr;
+    }
+    if (isConstruct() && evals) {
+      return evals;
+    }
+    llvm_unreachable("evaluation subs is inconsistent");
+    return nullptr;
   }
 
   /// Set that the construct `cstr` (if not a nullptr) has branches.

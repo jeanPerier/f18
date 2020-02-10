@@ -94,7 +94,7 @@ public:
       // Statement<T>, Statement<Indirection<T>, UnlabeledStatement<T>,
       // or UnlabeledStatement<Indirection<T>>
       auto stmt{UnwrapStmt<A>(a)};
-      if constexpr (PFT::isConstructStmts<T> || PFT::isOtherStmt<T>) {
+      if constexpr (PFT::isConstructStmt<T> || PFT::isOtherStmt<T>) {
         addEval(PFT::Evaluation{stmt.unwrapped, parents.back(), stmt.pos,
                                 stmt.lab});
       } else if constexpr (std::is_same_v<T, parser::ActionStmt>) {
@@ -160,11 +160,22 @@ private:
     parents.emplace_back(unit);
     return true;
   }
+  /// Make funclist to point to current parent function list if it exists.
+  void resetFuncList() {
+    if (!parents.empty()) {
+      std::visit(common::visitors{
+                     [&](PFT::FunctionLikeUnit *p) { funclist = &p->funcs; },
+                     [&](PFT::ModuleLikeUnit *p) { funclist = &p->funcs; },
+                     [&](auto *) { funclist = nullptr; },
+                 },
+                 parents.back().p);
+    }
+  }
 
   void exitFunc() {
     popEval();
-    funclist = nullptr;
     parents.pop_back();
+    resetFuncList();
   }
 
   // When we enter a construct structure, we want to build a new construct and
@@ -194,8 +205,8 @@ private:
   }
 
   void exitModule() {
-    funclist = nullptr;
     parents.pop_back();
+    resetFuncList();
   }
 
   template <typename A>
@@ -301,8 +312,8 @@ void annotateEvalListCFG(PFT::EvaluationCollection &evaluationCollection,
   for (auto &eval : evaluationCollection) {
     eval.isTarget = nextIsTarget;
     nextIsTarget = false;
-    if (eval.isConstruct()) {
-      annotateEvalListCFG(*eval.getConstructEvals(), &eval);
+    if (auto *subs{eval.getConstructEvals()}) {
+      annotateEvalListCFG(*subs, &eval);
       // assume that the entry and exit are both possible branch targets
       nextIsTarget = true;
     }
@@ -426,7 +437,7 @@ void annotateEvalListCFG(PFT::EvaluationCollection &evaluationCollection,
           } else if constexpr (common::HasMember<A, DoNothingConstructStmts>) {
             // Explicitly do nothing for these construct statements
           } else {
-            static_assert(!PFT::isConstructStmts<A>,
+            static_assert(!PFT::isConstructStmt<A>,
                           "All ConstructStmts impact on the control flow "
                           "should be explicitly handled");
           }
@@ -451,6 +462,16 @@ llvm::StringRef evalName(PFT::Evaluation &eval) {
   });
 }
 
+template <typename A>
+void dumpParentInfo(llvm::raw_ostream &stream, const A &evalOrUnit) {
+  stream << " node:" << (const void *)&evalOrUnit << " parent:";
+  std::visit(
+      common::visitors{
+          [&stream](const auto *parent) { stream << (const void *)parent; },
+      },
+      evalOrUnit.parent.p);
+}
+
 void dumpEvalList(llvm::raw_ostream &outputStream,
                   PFT::EvaluationCollection &evaluationCollection,
                   int indent = 1) {
@@ -458,13 +479,16 @@ void dumpEvalList(llvm::raw_ostream &outputStream,
   std::string indentString{white.substr(0, indent * 2)};
   for (PFT::Evaluation &eval : evaluationCollection) {
     llvm::StringRef name{evalName(eval)};
-    if (eval.isConstruct()) {
-      outputStream << indentString << "<<" << name << ">>\n";
-      dumpEvalList(outputStream, *eval.getConstructEvals(), indent + 1);
+    if (auto *subs{eval.getConstructEvals()}) {
+      outputStream << indentString << "<<" << name << ">>";
+      dumpParentInfo(outputStream, eval);
+      outputStream << "\n";
+      dumpEvalList(outputStream, *subs, indent + 1);
       outputStream << indentString << "<<End" << name << ">>\n";
     } else {
-      outputStream << indentString << name << ": " << eval.pos.ToString()
-                   << '\n';
+      outputStream << indentString << name << ": " << eval.pos.ToString();
+      dumpParentInfo(outputStream, eval);
+      outputStream << "\n";
     }
   }
 }
@@ -507,11 +531,30 @@ void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
       },
       functionLikeUnit.funStmts.front());
   outputStream << unitKind << ' ' << name;
+  dumpParentInfo(outputStream, functionLikeUnit);
   if (header.size())
     outputStream << ": " << header;
   outputStream << '\n';
   dumpEvalList(outputStream, functionLikeUnit.evals);
+  if (!functionLikeUnit.funcs.empty()) {
+    outputStream << "\nContains\n";
+    for (auto &func : functionLikeUnit.funcs) {
+      dumpFunctionLikeUnit(outputStream, func);
+    }
+    outputStream << "EndContains\n";
+  }
   outputStream << "End" << unitKind << ' ' << name << "\n\n";
+}
+
+void dumpModuleLikeUnit(llvm::raw_ostream &outputStream,
+                        PFT::ModuleLikeUnit &moduleLikeUnit) {
+  outputStream << "ModuleLike: ";
+  dumpParentInfo(outputStream, moduleLikeUnit);
+  outputStream << "\nContains\n";
+  for (auto &func : moduleLikeUnit.funcs) {
+    dumpFunctionLikeUnit(outputStream, func);
+  }
+  outputStream << "EndContains\nEndModuleLike\n\n";
 }
 
 } // namespace
@@ -603,21 +646,19 @@ void annotateControl(PFT::Program &pft) {
 
 /// Dump an PFT.
 void dumpPFT(llvm::raw_ostream &outputStream, PFT::Program &pft) {
+  outputStream << "PFT root node:" << (void *)&pft << "\n";
   for (auto &unit : pft.getUnits()) {
     std::visit(common::visitors{
-                   [&](PFT::BlockDataUnit &) {
-                     outputStream << "BlockData\nEndBlockData\n\n";
+                   [&](PFT::BlockDataUnit &unit) {
+                     outputStream << "BlockData: ";
+                     dumpParentInfo(outputStream, unit);
+                     outputStream << "\nEndBlockData\n\n";
                    },
                    [&](PFT::FunctionLikeUnit &func) {
                      dumpFunctionLikeUnit(outputStream, func);
-                     for (auto &func : func.funcs) {
-                       dumpFunctionLikeUnit(outputStream, func);
-                     }
                    },
                    [&](PFT::ModuleLikeUnit &unit) {
-                     for (auto &func : unit.funcs) {
-                       dumpFunctionLikeUnit(outputStream, func);
-                     }
+                     dumpModuleLikeUnit(outputStream, unit);
                    },
                },
                unit);
