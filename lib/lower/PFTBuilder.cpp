@@ -161,7 +161,7 @@ private:
     return true;
   }
   /// Make funclist to point to current parent function list if it exists.
-  void resetFuncList() {
+  void setFunctListToParentFuncs() {
     if (!parents.empty()) {
       std::visit(common::visitors{
                      [&](PFT::FunctionLikeUnit *p) { funclist = &p->funcs; },
@@ -175,7 +175,7 @@ private:
   void exitFunc() {
     popEval();
     parents.pop_back();
-    resetFuncList();
+    setFunctListToParentFuncs();
   }
 
   // When we enter a construct structure, we want to build a new construct and
@@ -206,7 +206,7 @@ private:
 
   void exitModule() {
     parents.pop_back();
-    resetFuncList();
+    setFunctListToParentFuncs();
   }
 
   template <typename A>
@@ -451,6 +451,8 @@ void annotateEvalListCFG(PFT::EvaluationCollection &evaluationCollection,
 /// potential branch targets
 inline void annotateFuncCFG(PFT::FunctionLikeUnit &functionLikeUnit) {
   annotateEvalListCFG(functionLikeUnit.evals, nullptr);
+  for (auto &internalFunc : functionLikeUnit.funcs)
+    annotateFuncCFG(internalFunc);
 }
 
 llvm::StringRef evalName(PFT::Evaluation &eval) {
@@ -464,10 +466,12 @@ llvm::StringRef evalName(PFT::Evaluation &eval) {
 
 template <typename A>
 void dumpParentInfo(llvm::raw_ostream &stream, const A &evalOrUnit) {
-  stream << " node:" << (const void *)&evalOrUnit << " parent:";
+  stream << " node:" << static_cast<const void *>(&evalOrUnit) << " parent:";
   std::visit(
       common::visitors{
-          [&stream](const auto *parent) { stream << (const void *)parent; },
+          [&stream](const auto *parent) {
+            stream << static_cast<const void *>(parent);
+          },
       },
       evalOrUnit.parent.p);
 }
@@ -538,9 +542,8 @@ void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
   dumpEvalList(outputStream, functionLikeUnit.evals);
   if (!functionLikeUnit.funcs.empty()) {
     outputStream << "\nContains\n";
-    for (auto &func : functionLikeUnit.funcs) {
+    for (auto &func : functionLikeUnit.funcs)
       dumpFunctionLikeUnit(outputStream, func);
-    }
     outputStream << "EndContains\n";
   }
   outputStream << "End" << unitKind << ' ' << name << "\n\n";
@@ -551,9 +554,8 @@ void dumpModuleLikeUnit(llvm::raw_ostream &outputStream,
   outputStream << "ModuleLike: ";
   dumpParentInfo(outputStream, moduleLikeUnit);
   outputStream << "\nContains\n";
-  for (auto &func : moduleLikeUnit.funcs) {
+  for (auto &func : moduleLikeUnit.funcs)
     dumpFunctionLikeUnit(outputStream, func);
-  }
   outputStream << "EndContains\nEndModuleLike\n\n";
 }
 
@@ -628,16 +630,10 @@ void annotateControl(PFT::Program &pft) {
   for (auto &unit : pft.getUnits()) {
     std::visit(common::visitors{
                    [](PFT::BlockDataUnit &) {},
-                   [](PFT::FunctionLikeUnit &func) {
-                     annotateFuncCFG(func);
-                     for (auto &statement : func.funcs) {
-                       annotateFuncCFG(statement);
-                     }
-                   },
+                   [](PFT::FunctionLikeUnit &func) { annotateFuncCFG(func); },
                    [](PFT::ModuleLikeUnit &unit) {
-                     for (auto &func : unit.funcs) {
+                     for (auto &func : unit.funcs)
                        annotateFuncCFG(func);
-                     }
                    },
                },
                unit);
@@ -646,7 +642,7 @@ void annotateControl(PFT::Program &pft) {
 
 /// Dump an PFT.
 void dumpPFT(llvm::raw_ostream &outputStream, PFT::Program &pft) {
-  outputStream << "PFT root node:" << (void *)&pft << "\n";
+  outputStream << "PFT root node:" << static_cast<void *>(&pft) << "\n";
   for (auto &unit : pft.getUnits()) {
     std::visit(common::visitors{
                    [&](PFT::BlockDataUnit &unit) {

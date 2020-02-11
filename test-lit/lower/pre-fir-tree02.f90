@@ -1,6 +1,6 @@
 ! RUN: %f18 -fdebug-pre-fir-tree -fparse-only %s | FileCheck %s
 
-! Test Pre-FIR Rree captures all the intended nodes from the parse-tree
+! Test Pre-FIR Tree captures all the intended nodes from the parse-tree
 
 ! CHECK: PFT root node:0x[[#%x, ROOT:]]
 ! CHECK: Program test_prog{{.*}} node:0x[[#%x, PROG:]] parent:0x[[#ROOT]]
@@ -213,50 +213,99 @@ end subroutine
 
 ! Remaining TODO
 
-! CHECK: Subroutine iocheck{{.*}} node:0x[[#%x, IO:]] parent:0x[[#ROOT]]
-subroutine iocheck()
-! WILLCHECK: BackspaceStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: CloseStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: OpenStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: PauseStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: ReadStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: RewindStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: WriteStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: InquireStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: WaitStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: EndfileStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: FlushStmt{{.*}} parent:0x[[#]]
+! CHECK: Subroutine iostmts{{.*}} node:0x[[#%x, IO:]] parent:0x[[#ROOT]]
+subroutine iostmts(filename, a, b, c)
+  character(*) :: filename
+  integer :: length
+  logical :: file_is_opened
+  real, a, b ,c
+  ! CHECK: InquireStmt{{.*}} parent:0x[[#]]
+  inquire(file=filename, opened=file_is_opened)
+  ! CHECK: <<IfConstruct>>{{.*}} node:0x[[#%x, IFTHEN:]] parent:0x[[#IO]]
+  if (file_is_opened) then
+    ! CHECK: OpenStmt{{.*}} parent:0x[[#IFTHEN]]
+    open(10, FILE=filename)
+  end if
+  ! CHECK: ReadStmt{{.*}} parent:0x[[#IO]]
+  read(10, *) length
+  ! CHECK: RewindStmt{{.*}} parent:0x[[#IO]]
+  rewind 10
+  ! CHECK: NamelistStmt{{.*}} parent:0x[[#IO]]
+  namelist /nlist/ a, b, c
+  ! CHECK: WriteStmt{{.*}} parent:0x[[#IO]]
+  write(10, NML=nlist)
+  ! CHECK: BackspaceStmt{{.*}} parent:0x[[#IO]]
+  backspace(10)
+  ! CHECK: FormatStmt{{.*}} parent:0x[[#IO]]
+1 format (1PE12.4)
+  ! CHECK: WriteStmt{{.*}} parent:0x[[#IO]]
+  write (10, 1) a
+  ! CHECK: EndfileStmt{{.*}} parent:0x[[#IO]]
+  endfile 10
+  ! CHECK: FlushStmt{{.*}} parent:0x[[#IO]]
+  flush 10
+  ! CHECK: WaitStmt{{.*}} parent:0x[[#IO]]
+  wait(10)
+  ! CHECK: CloseStmt{{.*}} parent:0x[[#IO]]
+  close(10)
 end subroutine
+
 
 ! CHECK: Subroutine sub2{{.*}} node:0x[[#%x, SUB2:]] parent:0x[[#ROOT]]
 subroutine sub2()
-! WILLCHECK: ArithmeticIfStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: AssignedGotoStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: AssignStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: ComputedGotoStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: ContinueStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: CycleStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: ExitStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: GotoStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: StopStmt{{.*}} parent:0x[[#]]
+  integer :: i, j, k, l
+  i = 0
+1 j = i
+  ! CHECK: ContinueStmt{{.*}} parent:0x[[#SUB2]]
+2 continue
+  i = i+1
+3 j = j+1
+! CHECK: ArithmeticIfStmt{{.*}} parent:0x[[#SUB2]]
+  if (j-i) 3, 4, 5
+  ! CHECK: GotoStmt{{.*}} parent:0x[[#SUB2]]
+4  goto 6
+
+! FIXME: is name resolution on assigned goto broken/todo ?
+! WILLCHECK: AssignStmt{{.*}} parent:0x[[#SUB2]]
+!55 assign 6 to label
+! WILLCHECK: AssignedGotoStmt{{.*}} parent:0x[[#SUB2]]
+!66  go to label (5, 6)
+
+! CHECK: ComputedGotoStmt{{.*}} parent:0x[[#SUB2]]
+  go to (5, 6), 1 + mod(i, 2)
+5 j = j + 1
+6 i = i + j/2
+
+  ! CHECK: <<DoConstruct>>{{.*}} node:0x[[#%x, DO1:]] parent:0x[[#SUB2]]
+  do1: do k=1,10
+    ! CHECK: <<DoConstruct>>{{.*}} node:0x[[#%x, DO2:]] parent:0x[[#DO1]]
+    do2: do l=5,20
+      ! CHECK: CycleStmt{{.*}} parent:0x[[#DO2]]
+      cycle do1
+      ! CHECK: ExitStmt{{.*}} parent:0x[[#DO2]]
+      exit do2
+    end do do2
+  end do do1
+
+  ! CHECK: PauseStmt{{.*}} parent:0x[[#SUB2]]
+  pause 7
+  ! CHECK: StopStmt{{.*}} parent:0x[[#SUB2]]
+  stop
 end subroutine
 
-! TODO: check others
 
-! TODO: openmp related tests
-!      common::Indirection<OpenMPConstruct>,
-!      common::Indirection<OmpEndLoopDirective>>
+! CHECK: Subroutine sub3{{.*}} node:0x[[#%x, SUB3:]] parent:0x[[#ROOT]]
+subroutine sub3()
+ print *, "normal"
+  ! CHECK: EntryStmt{{.*}} parent:0x[[#SUB3]]
+ entry sub4entry()
+ print *, "test"
+end subroutine
 
-! TODO: coarray related test
-!      common::Indirection<ChangeTeamConstruct>,
-!      common::Indirection<CriticalConstruct>,
-! WILLCHECK: EventPostStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: EventWaitStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: FormTeamStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: FailImageStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: LockStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: SyncAllStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: SyncImagesStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: SyncMemoryStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: SyncTeamStmt{{.*}} parent:0x[[#]]
-! WILLCHECK: UnlockStmt{{.*}} parent:0x[[#]]
+! CHECK: Subroutine sub4{{.*}} node:0x[[#%x, SUB4:]] parent:0x[[#ROOT]]
+subroutine sub4(i, j)
+  integer :: i
+  print*, "test"
+  ! CHECK: DataStmt{{.*}} parent:0x[[#SUB4]]
+  data i /1/
+end subroutine
