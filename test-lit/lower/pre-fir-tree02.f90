@@ -1,6 +1,7 @@
 ! RUN: %f18 -fdebug-pre-fir-tree -fparse-only %s | FileCheck %s
 
 ! Test Pre-FIR Tree captures all the intended nodes from the parse-tree
+! Coarray and OpenMP related nodes are tested in other files.
 
 ! CHECK: PFT root node:0x[[#%x, ROOT:]]
 ! CHECK: Program test_prog{{.*}} node:0x[[#%x, PROG:]] parent:0x[[#ROOT]]
@@ -100,13 +101,20 @@ program test_prog
   ! CHECK: <<WhereConstruct>>{{.*}} node:0x[[#%x, WHERE:]] parent:0x[[#PROG]]
   ! CHECK: WhereConstructStmt{{.*}} parent:0x[[#WHERE]]
   where (x == 0.)
-  ! FIXME: assignment not captured here ?
+    ! CHECK: AssignmentStmt{{.*}} parent:0x[[#WHERE]]
     x = 0.01
   ! CHECK: MaskedElsewhereStmt{{.*}} parent:0x[[#WHERE]]
   elsewhere (x < 0.5)
+    ! CHECK: AssignmentStmt{{.*}} parent:0x[[#WHERE]]
     x = x*2.
+    ! CHECK: <<WhereConstruct>>{{.*}} node:0x[[#%x, WHERE2:]] parent:0x[[#WHERE]]
+    where (y > 0.4)
+      ! CHECK: AssignmentStmt{{.*}} parent:0x[[#WHERE2]]
+      y = y/2.
+    end where
   ! CHECK: ElsewhereStmt{{.*}} parent:0x[[#WHERE]]
   elsewhere
+    ! CHECK: AssignmentStmt{{.*}} parent:0x[[#WHERE]]
     x = x + 1.
   ! CHECK: EndWhereStmt{{.*}} parent:0x[[#WHERE]]
   end where

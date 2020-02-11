@@ -132,6 +132,18 @@ public:
         },
         statement.statement.u));
   }
+  void Post(const parser::WhereBodyConstruct &whereBody) {
+    std::visit(common::visitors{
+                   [&](const parser::Statement<parser::AssignmentStmt> &stmt) {
+                     // Not caught as other AssignmentStmt because it is not
+                     // wrapped in a parser::ActionStmt.
+                     addEval(PFT::Evaluation{stmt.statement, parents.back(),
+                                             stmt.source, stmt.label});
+                   },
+                   [&](const auto &) { /* Already handled*/ },
+               },
+               whereBody.u);
+  }
 
 private:
   // ActionStmt has a couple of non-conforming cases, which get handled
