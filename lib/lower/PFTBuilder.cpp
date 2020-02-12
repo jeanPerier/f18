@@ -9,6 +9,7 @@
 #include "flang/lower/PFTBuilder.h"
 #include "flang/parser/dump-parse-tree.h"
 #include "flang/parser/parse-tree-visitor.h"
+#include "llvm/ADT/DenseMap.h"
 #include <algorithm>
 #include <cassert>
 #include <utility>
@@ -74,20 +75,11 @@ public:
 
   template <typename A>
   constexpr bool Pre(const A &a) {
+    bool visit{true};
     if constexpr (PFT::isFunctionLike<A>) {
       return enterFunc(a);
     } else if constexpr (PFT::isConstruct<A>) {
       return enterConstruct(a);
-    }
-    return true;
-  }
-
-  template <typename A>
-  constexpr void Post(const A &a) {
-    if constexpr (PFT::isFunctionLike<A>) {
-      exitFunc();
-    } else if constexpr (PFT::isConstruct<A>) {
-      exitConstruct();
     } else if constexpr (UnwrapStmt<A>::isStmt) {
       using T = typename UnwrapStmt<A>::Type;
       // Node "a" being visited has one of the following types:
@@ -97,9 +89,21 @@ public:
       if constexpr (PFT::isConstructStmt<T> || PFT::isOtherStmt<T>) {
         addEval(PFT::Evaluation{stmt.unwrapped, parents.back(), stmt.pos,
                                 stmt.lab});
+        visit = false;
       } else if constexpr (std::is_same_v<T, parser::ActionStmt>) {
         addEval(makeEvalAction(stmt.unwrapped, stmt.pos, stmt.lab));
+        visit = false;
       }
+    }
+    return visit;
+  }
+
+  template <typename A>
+  constexpr void Post(const A &) {
+    if constexpr (PFT::isFunctionLike<A>) {
+      exitFunc();
+    } else if constexpr (PFT::isConstruct<A>) {
+      exitConstruct();
     }
   }
 
@@ -111,38 +115,43 @@ public:
   void Post(const parser::Submodule &) { exitModule(); }
 
   // Block data
-  void Post(const parser::BlockData &node) {
+  bool Pre(const parser::BlockData &node) {
     addUnit(PFT::BlockDataUnit{node, parents.back()});
+    return false;
   }
 
   // Get rid of production wrapper
-  void Post(const parser::UnlabeledStatement<parser::ForallAssignmentStmt>
-                &statement) {
+  bool Pre(const parser::UnlabeledStatement<parser::ForallAssignmentStmt>
+               &statement) {
     addEval(std::visit(
         [&](const auto &x) {
           return PFT::Evaluation{x, parents.back(), statement.source, {}};
         },
         statement.statement.u));
+    return false;
   }
-  void Post(const parser::Statement<parser::ForallAssignmentStmt> &statement) {
+  bool Pre(const parser::Statement<parser::ForallAssignmentStmt> &statement) {
     addEval(std::visit(
         [&](const auto &x) {
           return PFT::Evaluation{x, parents.back(), statement.source,
                                  statement.label};
         },
         statement.statement.u));
+    return false;
   }
-  void Post(const parser::WhereBodyConstruct &whereBody) {
-    std::visit(common::visitors{
-                   [&](const parser::Statement<parser::AssignmentStmt> &stmt) {
-                     // Not caught as other AssignmentStmt because it is not
-                     // wrapped in a parser::ActionStmt.
-                     addEval(PFT::Evaluation{stmt.statement, parents.back(),
-                                             stmt.source, stmt.label});
-                   },
-                   [&](const auto &) { /* Already handled*/ },
-               },
-               whereBody.u);
+  bool Pre(const parser::WhereBodyConstruct &whereBody) {
+    return std::visit(
+        common::visitors{
+            [&](const parser::Statement<parser::AssignmentStmt> &stmt) {
+              // Not caught as other AssignmentStmt because it is not
+              // wrapped in a parser::ActionStmt.
+              addEval(PFT::Evaluation{stmt.statement, parents.back(),
+                                      stmt.source, stmt.label});
+              return false;
+            },
+            [&](const auto &) { return true; },
+        },
+        whereBody.u);
   }
 
 private:
@@ -467,109 +476,156 @@ inline void annotateFuncCFG(PFT::FunctionLikeUnit &functionLikeUnit) {
     annotateFuncCFG(internalFunc);
 }
 
-llvm::StringRef evalName(PFT::Evaluation &eval) {
-  return eval.visit(common::visitors{
-      [](const PFT::CGJump) { return "CGJump"; },
-      [](const auto &parseTreeNode) {
-        return parser::ParseTreeDumper::GetNodeName(parseTreeNode);
-      },
-  });
-}
+class PFTDumper {
+public:
+  void dumpPFT(llvm::raw_ostream &outputStream, PFT::Program &pft) {
+    outputStream << "PFT root node:" << getNodeIndex(pft) << "\n";
+    for (auto &unit : pft.getUnits()) {
+      std::visit(common::visitors{
+                     [&](PFT::BlockDataUnit &unit) {
+                       outputStream << getNodeIndex(unit) << " ";
+                       outputStream << "BlockData: ";
+                       dumpParentInfo(outputStream, unit);
+                       outputStream << "\nEndBlockData\n\n";
+                     },
+                     [&](PFT::FunctionLikeUnit &func) {
+                       dumpFunctionLikeUnit(outputStream, func);
+                     },
+                     [&](PFT::ModuleLikeUnit &unit) {
+                       dumpModuleLikeUnit(outputStream, unit);
+                     },
+                 },
+                 unit);
+    }
+    resetIndexes();
+  }
+  llvm::StringRef evalName(PFT::Evaluation &eval) {
+    return eval.visit(common::visitors{
+        [](const PFT::CGJump) { return "CGJump"; },
+        [](const auto &parseTreeNode) {
+          return parser::ParseTreeDumper::GetNodeName(parseTreeNode);
+        },
+    });
+  }
 
-template <typename A>
-void dumpParentInfo(llvm::raw_ostream &stream, const A &evalOrUnit) {
-  stream << " node:" << static_cast<const void *>(&evalOrUnit) << " parent:";
-  std::visit(
-      common::visitors{
-          [&stream](const auto *parent) {
-            stream << static_cast<const void *>(parent);
-          },
-      },
-      evalOrUnit.parent.p);
-}
+  template <typename A>
+  void dumpParentInfo(llvm::raw_ostream &stream, const A &evalOrUnit) {
+    stream << " parent:";
+    std::visit(
+        common::visitors{
+            [&](const auto *parent) { stream << getNodeIndex(*parent); },
+        },
+        evalOrUnit.parent.p);
+    stream << " ";
+  }
 
-void dumpEvalList(llvm::raw_ostream &outputStream,
-                  PFT::EvaluationCollection &evaluationCollection,
-                  int indent = 1) {
-  static const std::string white{"                                      ++"};
-  std::string indentString{white.substr(0, indent * 2)};
-  for (PFT::Evaluation &eval : evaluationCollection) {
-    llvm::StringRef name{evalName(eval)};
-    if (auto *subs{eval.getConstructEvals()}) {
-      outputStream << indentString << "<<" << name << ">>";
-      dumpParentInfo(outputStream, eval);
-      outputStream << "\n";
-      dumpEvalList(outputStream, *subs, indent + 1);
-      outputStream << indentString << "<<End" << name << ">>\n";
-    } else {
-      outputStream << indentString << name << ": " << eval.pos.ToString();
-      dumpParentInfo(outputStream, eval);
-      outputStream << "\n";
+  void dumpEvalList(llvm::raw_ostream &outputStream,
+                    PFT::EvaluationCollection &evaluationCollection,
+                    int indent = 1) {
+    static const std::string white{"                                      ++"};
+    std::string indentString{white.substr(0, indent * 2)};
+    for (PFT::Evaluation &eval : evaluationCollection) {
+      outputStream << indentString << getNodeIndex(eval) << " ";
+      llvm::StringRef name{evalName(eval)};
+      if (auto *subs{eval.getConstructEvals()}) {
+        outputStream << "<<" << name << ">>";
+        dumpParentInfo(outputStream, eval);
+        outputStream << "\n";
+        dumpEvalList(outputStream, *subs, indent + 1);
+        outputStream << indentString << "<<End" << name << ">>\n";
+      } else {
+        outputStream << name;
+        dumpParentInfo(outputStream, eval);
+        outputStream << ": " << eval.pos.ToString() + "\n";
+      }
     }
   }
-}
 
-void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
-                          PFT::FunctionLikeUnit &functionLikeUnit) {
-  llvm::StringRef unitKind{};
-  std::string name{};
-  std::string header{};
-  std::visit(
-      common::visitors{
-          [&](const parser::Statement<parser::ProgramStmt> *statement) {
-            unitKind = "Program";
-            name = statement->statement.v.ToString();
-          },
-          [&](const parser::Statement<parser::FunctionStmt> *statement) {
-            unitKind = "Function";
-            name = std::get<parser::Name>(statement->statement.t).ToString();
-            header = statement->source.ToString();
-          },
-          [&](const parser::Statement<parser::SubroutineStmt> *statement) {
-            unitKind = "Subroutine";
-            name = std::get<parser::Name>(statement->statement.t).ToString();
-            header = statement->source.ToString();
-          },
-          [&](const parser::Statement<parser::MpSubprogramStmt> *statement) {
-            unitKind = "MpSubprogram";
-            name = statement->statement.v.ToString();
-            header = statement->source.ToString();
-          },
-          [&](auto *) {
-            if (std::get_if<const parser::Statement<parser::EndProgramStmt> *>(
-                    &functionLikeUnit.funStmts.back())) {
+  void dumpFunctionLikeUnit(llvm::raw_ostream &outputStream,
+                            PFT::FunctionLikeUnit &functionLikeUnit) {
+    outputStream << getNodeIndex(functionLikeUnit) << " ";
+    llvm::StringRef unitKind{};
+    std::string name{};
+    std::string header{};
+    std::visit(
+        common::visitors{
+            [&](const parser::Statement<parser::ProgramStmt> *statement) {
               unitKind = "Program";
-              name = "<anonymous>";
-            } else {
-              unitKind = ">>>>> Error - no program unit <<<<<";
-            }
-          },
-      },
-      functionLikeUnit.funStmts.front());
-  outputStream << unitKind << ' ' << name;
-  dumpParentInfo(outputStream, functionLikeUnit);
-  if (header.size())
-    outputStream << ": " << header;
-  outputStream << '\n';
-  dumpEvalList(outputStream, functionLikeUnit.evals);
-  if (!functionLikeUnit.funcs.empty()) {
-    outputStream << "\nContains\n";
-    for (auto &func : functionLikeUnit.funcs)
-      dumpFunctionLikeUnit(outputStream, func);
-    outputStream << "EndContains\n";
+              name = statement->statement.v.ToString();
+            },
+            [&](const parser::Statement<parser::FunctionStmt> *statement) {
+              unitKind = "Function";
+              name = std::get<parser::Name>(statement->statement.t).ToString();
+              header = statement->source.ToString();
+            },
+            [&](const parser::Statement<parser::SubroutineStmt> *statement) {
+              unitKind = "Subroutine";
+              name = std::get<parser::Name>(statement->statement.t).ToString();
+              header = statement->source.ToString();
+            },
+            [&](const parser::Statement<parser::MpSubprogramStmt> *statement) {
+              unitKind = "MpSubprogram";
+              name = statement->statement.v.ToString();
+              header = statement->source.ToString();
+            },
+            [&](auto *) {
+              if (std::get_if<const parser::Statement<parser::EndProgramStmt>
+                                  *>(&functionLikeUnit.funStmts.back())) {
+                unitKind = "Program";
+                name = "<anonymous>";
+              } else {
+                unitKind = ">>>>> Error - no program unit <<<<<";
+              }
+            },
+        },
+        functionLikeUnit.funStmts.front());
+    outputStream << unitKind << ' ' << name;
+    dumpParentInfo(outputStream, functionLikeUnit);
+    if (header.size())
+      outputStream << ": " << header;
+    outputStream << '\n';
+    dumpEvalList(outputStream, functionLikeUnit.evals);
+    if (!functionLikeUnit.funcs.empty()) {
+      outputStream << "\nContains\n";
+      for (auto &func : functionLikeUnit.funcs)
+        dumpFunctionLikeUnit(outputStream, func);
+      outputStream << "EndContains\n";
+    }
+    outputStream << "End" << unitKind << ' ' << name << "\n\n";
   }
-  outputStream << "End" << unitKind << ' ' << name << "\n\n";
-}
 
-void dumpModuleLikeUnit(llvm::raw_ostream &outputStream,
-                        PFT::ModuleLikeUnit &moduleLikeUnit) {
-  outputStream << "ModuleLike: ";
-  dumpParentInfo(outputStream, moduleLikeUnit);
-  outputStream << "\nContains\n";
-  for (auto &func : moduleLikeUnit.funcs)
-    dumpFunctionLikeUnit(outputStream, func);
-  outputStream << "EndContains\nEndModuleLike\n\n";
-}
+  void dumpModuleLikeUnit(llvm::raw_ostream &outputStream,
+                          PFT::ModuleLikeUnit &moduleLikeUnit) {
+    outputStream << getNodeIndex(moduleLikeUnit) << " ";
+    outputStream << "ModuleLike: ";
+    dumpParentInfo(outputStream, moduleLikeUnit);
+    outputStream << "\nContains\n";
+    for (auto &func : moduleLikeUnit.funcs)
+      dumpFunctionLikeUnit(outputStream, func);
+    outputStream << "EndContains\nEndModuleLike\n\n";
+  }
+
+  template <typename T>
+  std::size_t getNodeIndex(const T &node) {
+    auto addr{static_cast<const void *>(&node)};
+    auto it{nodeIndexes.find(addr)};
+    if (it != nodeIndexes.end()) {
+      return it->second;
+    }
+    nodeIndexes.try_emplace(addr, nextIndex);
+    return nextIndex++;
+  }
+  std::size_t getNodeIndex(const PFT::Program &) { return 0; }
+
+  void resetIndexes() {
+    nodeIndexes.clear();
+    nextIndex = 1;
+  }
+
+private:
+  llvm::DenseMap<const void *, std::size_t> nodeIndexes;
+  std::size_t nextIndex{1}; // 0 is the root
+};
 
 } // namespace
 
@@ -654,23 +710,7 @@ void annotateControl(PFT::Program &pft) {
 
 /// Dump an PFT.
 void dumpPFT(llvm::raw_ostream &outputStream, PFT::Program &pft) {
-  outputStream << "PFT root node:" << static_cast<void *>(&pft) << "\n";
-  for (auto &unit : pft.getUnits()) {
-    std::visit(common::visitors{
-                   [&](PFT::BlockDataUnit &unit) {
-                     outputStream << "BlockData: ";
-                     dumpParentInfo(outputStream, unit);
-                     outputStream << "\nEndBlockData\n\n";
-                   },
-                   [&](PFT::FunctionLikeUnit &func) {
-                     dumpFunctionLikeUnit(outputStream, func);
-                   },
-                   [&](PFT::ModuleLikeUnit &unit) {
-                     dumpModuleLikeUnit(outputStream, unit);
-                   },
-               },
-               unit);
-  }
+  PFTDumper{}.dumpPFT(outputStream, pft);
 }
 
 } // namespace Fortran::lower
