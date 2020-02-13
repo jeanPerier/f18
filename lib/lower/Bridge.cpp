@@ -960,13 +960,10 @@ class FirConverter : public AbstractConverter {
                  L::Optional<L::StringRef> host = {}) {
     std::string name;
     const Se::Symbol *symbol{nullptr};
-    auto size{func.funStmts.size()};
 
-    assert((size == 1 || size == 2) && "ill-formed subprogram");
-    if (size == 2) {
+    if (func.beginStmt) {
       currentEvaluation = nullptr;
-      std::visit([&](auto *p) { genFIR(*p, name, symbol); },
-                 func.funStmts.front());
+      std::visit([&](auto *p) { genFIR(*p, name, symbol); }, *func.beginStmt);
     } else {
       name = uniquer.doProgramEntry();
     }
@@ -978,8 +975,7 @@ class FirConverter : public AbstractConverter {
       lowerEval(e);
     }
     currentEvaluation = nullptr;
-    std::visit([&](auto *p) { genFIR(*p, name, symbol); },
-               func.funStmts.back());
+    std::visit([&](auto *p) { genFIR(*p, name, symbol); }, func.endStmt);
 
     endNewFunction();
 
