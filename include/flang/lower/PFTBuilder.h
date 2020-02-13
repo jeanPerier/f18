@@ -305,7 +305,7 @@ struct FunctionLikeUnit : public ProgramUnit {
 
   bool isMainProgram() {
     return std::holds_alternative<
-        const parser::Statement<parser::EndProgramStmt> *>(funStmts.back());
+        const parser::Statement<parser::EndProgramStmt> *>(endStmt);
   }
   const parser::FunctionStmt *getFunction() {
     return getA<parser::FunctionStmt>();
@@ -317,15 +317,20 @@ struct FunctionLikeUnit : public ProgramUnit {
     return getA<parser::MpSubprogramStmt>();
   }
 
-  std::list<FunctionStatement> funStmts; // begin/end pair
-  EvaluationCollection evals;            // statements
-  std::list<FunctionLikeUnit> funcs;     // internal procedures
+  /// Anonymous programs do not have a begin statement
+  std::optional<FunctionStatement> beginStmt;
+  FunctionStatement endStmt;
+  EvaluationCollection evals;        // statements
+  std::list<FunctionLikeUnit> funcs; // internal procedures
 
 private:
   template <typename A>
   const A *getA() {
-    if (auto p = std::get_if<const parser::Statement<A> *>(&funStmts.front()))
-      return &(*p)->statement;
+    if (beginStmt) {
+      if (auto p =
+              std::get_if<const parser::Statement<A> *>(&beginStmt.value()))
+        return &(*p)->statement;
+    }
     return nullptr;
   }
 };
@@ -346,7 +351,8 @@ struct ModuleLikeUnit : public ProgramUnit {
   ModuleLikeUnit(ModuleLikeUnit &&) = default;
   ModuleLikeUnit(const ModuleLikeUnit &) = delete;
 
-  std::list<ModuleStatement> modStmts;
+  ModuleStatement beginStmt;
+  ModuleStatement endStmt;
   std::list<FunctionLikeUnit> funcs;
 };
 
