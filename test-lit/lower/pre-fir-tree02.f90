@@ -3,8 +3,7 @@
 ! Test Pre-FIR Tree captures all the intended nodes from the parse-tree
 ! Coarray and OpenMP related nodes are tested in other files.
 
-! CHECK: PFT root node:[[#%u, ROOT:]]
-! CHECK: [[#%u, PROG:]]{{.*}}Program test_prog{{.*}}parent:[[#ROOT]]
+! CHECK: Program test_prog
 program test_prog
   ! Check specification part is not part of the tree.
   interface
@@ -16,126 +15,136 @@ program test_prog
   real, allocatable, target :: x(:)
   real :: y(100)
   ! CHECK-NOT: node
-  ! CHECK: [[#%u, DO1:]]{{.*}}<<DoConstruct>>{{.*}}parent:[[#PROG]]
-  ! CHECK: NonLabelDoStmt{{.*}}parent:[[#DO1]]
+  ! CHECK: <<DoConstruct>>
+  ! CHECK: NonLabelDoStmt
   do i=1,5
-    ! CHECK: PrintStmt{{.*}}parent:[[#DO1]]
+    ! CHECK: PrintStmt
     print *, "hey"
-    ! CHECK: [[#%u, DO2:]]{{.*}}<<DoConstruct>>{{.*}}parent:[[#DO1]]
-    ! CHECK: NonLabelDoStmt{{.*}}parent:[[#DO2]]
+    ! CHECK: <<DoConstruct>>
+    ! CHECK: NonLabelDoStmt
     do j=1,5
-      ! CHECK: PrintStmt{{.*}}parent:[[#DO2]]
+      ! CHECK: PrintStmt
       print *, "hello", i, j
-    ! CHECK: EndDoStmt{{.*}}parent:[[#DO2]]
+    ! CHECK: EndDoStmt
     end do
-  ! CHECK: EndDoStmt{{.*}}parent:[[#DO1]]
+    ! CHECK: <<EndDoConstruct>>
+  ! CHECK: EndDoStmt
   end do
+  ! CHECK: <<EndDoConstruct>>
 
-  ! CHECK: [[#%u, ASSOC:]]{{.*}}<<AssociateConstruct>>{{.*}}parent:[[#PROG]]
-  ! CHECK: AssociateStmt{{.*}}parent:[[#ASSOC]]
+  ! CHECK: <<AssociateConstruct>>
+  ! CHECK: AssociateStmt
   associate (k => i + j)
-    ! CHECK: AllocateStmt{{.*}}parent:[[#ASSOC]]
+    ! CHECK: AllocateStmt
     allocate(x(k))
-  ! CHECK: EndAssociateStmt{{.*}}parent:[[#ASSOC]]
+  ! CHECK: EndAssociateStmt
   end associate
+  ! CHECK: <<EndAssociateConstruct>>
 
-  ! CHECK: [[#%u, BLOCK:]]{{.*}}<<BlockConstruct>>{{.*}}parent:[[#PROG]]
-  ! CHECK: BlockStmt{{.*}}parent:[[#BLOCK]]
+  ! CHECK: <<BlockConstruct>>
+  ! CHECK: BlockStmt
   block
     integer :: k, l
     real, pointer :: p(:)
-    ! CHECK: PointerAssignmentStmt{{.*}}parent:[[#BLOCK]]
+    ! CHECK: PointerAssignmentStmt
     p => x
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#BLOCK]]
+    ! CHECK: AssignmentStmt
     k = size(p)
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#BLOCK]]
+    ! CHECK: AssignmentStmt
     l = 1
-    ! CHECK: [[#%u, SELECTCASE:]]{{.*}}<<CaseConstruct>>{{.*}}parent:[[#BLOCK]]
-    ! CHECK: SelectCaseStmt{{.*}}parent:[[#SELECTCASE]]
+    ! CHECK: <<CaseConstruct>>
+    ! CHECK: SelectCaseStmt
     select case (k)
-      ! CHECK: CaseStmt{{.*}}parent:[[#SELECTCASE]]
+      ! CHECK: CaseStmt
       case (:0)
-        ! CHECK: NullifyStmt{{.*}}parent:[[#SELECTCASE]]
+        ! CHECK: NullifyStmt
         nullify(p)
-      ! CHECK: CaseStmt{{.*}}parent:[[#SELECTCASE]]
+      ! CHECK: CaseStmt
       case (1)
-        ! CHECK: [[#%u, IFTHEN:]]{{.*}}<<IfConstruct>>{{.*}}parent:[[#SELECTCASE]]
-        ! CHECK: IfThenStmt{{.*}}parent:[[#IFTHEN]]
+        ! CHECK: <<IfConstruct>>
+        ! CHECK: IfThenStmt
         if (p(1)>0.) then
-          ! CHECK: PrintStmt{{.*}}parent:[[#IFTHEN]]
+          ! CHECK: PrintStmt
           print *, "+"
-        ! CHECK: ElseIfStmt{{.*}}parent:[[#IFTHEN]]
+        ! CHECK: ElseIfStmt
         else if (p(1)==0.) then
-          ! CHECK: PrintStmt{{.*}}parent:[[#IFTHEN]]
+          ! CHECK: PrintStmt
           print *, "0."
-        ! CHECK: ElseStmt{{.*}}parent:[[#IFTHEN]]
+        ! CHECK: ElseStmt
         else
-          ! CHECK: PrintStmt{{.*}}parent:[[#IFTHEN]]
+          ! CHECK: PrintStmt
           print *, "-"
-        ! CHECK: EndIfStmt{{.*}}parent:[[#IFTHEN]]
+        ! CHECK: EndIfStmt
         end if
-        ! CHECK: CaseStmt{{.*}}parent:[[#SELECTCASE]]
+        ! CHECK: <<EndIfConstruct>>
+        ! CHECK: CaseStmt
       case (2:10)
-      ! CHECK: CaseStmt{{.*}}parent:[[#SELECTCASE]]
+      ! CHECK: CaseStmt
       case default
         ! Note: label-do-loop are canonicalized into do constructs
-        ! CHECK: [[#%u, DO3:]]{{.*}}<<DoConstruct>>{{.*}}parent:[[#SELECTCASE]]
-        ! CHECK: NonLabelDoStmt{{.*}}parent:[[#DO3]]
+        ! CHECK: <<DoConstruct>>
+        ! CHECK: NonLabelDoStmt
         do 22 while(l<=k)
-          ! CHECK: IfStmt{{.*}}parent:[[#DO3]]
+          ! CHECK: IfStmt
           if (p(l)<0.) p(l)=cos(p(l))
-          ! CHECK: CallStmt{{.*}}parent:[[#DO3]]
+          ! CHECK: CallStmt
 22        call incr(l)
-        ! CHECK: EndDoStmt{{.*}}parent:[[#DO3]]
-      ! CHECK: CaseStmt{{.*}}parent:[[#SELECTCASE]]
+        ! CHECK: EndDoStmt
+       ! CHECK: <<EndDoConstruct>>
+      ! CHECK: CaseStmt
       case (100:)
-    ! CHECK: EndSelectStmt{{.*}}parent:[[#SELECTCASE]]
+    ! CHECK: EndSelectStmt
     end select
-  ! CHECK: EndBlockStmt{{.*}}parent:[[#BLOCK]]
+  ! CHECK: <<EndCaseConstruct>>
+  ! CHECK: EndBlockStmt
   end block
+  ! CHECK: <<EndBlockConstruct>>
 
   ! CHECK-NOT: WhereConstruct
-  ! CHECK: WhereStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: WhereStmt
   where (x > 1.) x = x/2.
 
-  ! CHECK: [[#%u, WHERE:]]{{.*}}<<WhereConstruct>>{{.*}}parent:[[#PROG]]
-  ! CHECK: WhereConstructStmt{{.*}}parent:[[#WHERE]]
+  ! CHECK: <<WhereConstruct>>
+  ! CHECK: WhereConstructStmt
   where (x == 0.)
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#WHERE]]
+    ! CHECK: AssignmentStmt
     x = 0.01
-  ! CHECK: MaskedElsewhereStmt{{.*}}parent:[[#WHERE]]
+  ! CHECK: MaskedElsewhereStmt
   elsewhere (x < 0.5)
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#WHERE]]
+    ! CHECK: AssignmentStmt
     x = x*2.
-    ! CHECK: [[#%u, WHERE2:]]{{.*}}<<WhereConstruct>>{{.*}}parent:[[#WHERE]]
+    ! CHECK: <<WhereConstruct>>
     where (y > 0.4)
-      ! CHECK: AssignmentStmt{{.*}}parent:[[#WHERE2]]
+      ! CHECK: AssignmentStmt
       y = y/2.
     end where
-  ! CHECK: ElsewhereStmt{{.*}}parent:[[#WHERE]]
+    ! CHECK: <<EndWhereConstruct>>
+  ! CHECK: ElsewhereStmt
   elsewhere
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#WHERE]]
+    ! CHECK: AssignmentStmt
     x = x + 1.
-  ! CHECK: EndWhereStmt{{.*}}parent:[[#WHERE]]
+  ! CHECK: EndWhereStmt
   end where
+  ! CHECK: <<EndWhereConstruct>>
 
   ! CHECK-NOT: ForAllConstruct
-  ! CHECK: ForallStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: ForallStmt
   forall (i = 1:5) x = y(i)
 
-  ! CHECK: [[#%u, FORALL:]]{{.*}}<<ForallConstruct>>{{.*}}parent:[[#PROG]]
-  ! CHECK: ForallConstructStmt{{.*}}parent:[[#FORALL]]
+  ! CHECK: <<ForallConstruct>>
+  ! CHECK: ForallConstructStmt
   forall (i = 1:5)
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#FORALL]]
+    ! CHECK: AssignmentStmt
     x(i) = x(i) + y(10*i)
-  ! CHECK: EndForallStmt{{.*}}parent:[[#FORALL]]
+  ! CHECK: EndForallStmt
   end forall
+  ! CHECK: <<EndForallConstruct>>
 
-  ! CHECK: DeallocateStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: DeallocateStmt
   deallocate(x)
 end
 
-! CHECK: [[#%u, MOD:]]{{.*}}ModuleLike{{.*}}parent:[[#ROOT]]
+! CHECK: ModuleLike
 module test
   type :: a_type
     integer :: x
@@ -144,176 +153,182 @@ module test
     integer :: y
   end type
 contains
-  ! CHECK: [[#%u, FOO:]]{{.*}}Function foo{{.*}}parent:[[#MOD]]
+  ! CHECK: Function foo
   function foo(x)
     real x(..)
     integer :: foo
-    ! CHECK: [[#%u, SELECTRANK:]]{{.*}}<<SelectRankConstruct>>{{.*}}parent:[[#FOO]]
-    ! CHECK: SelectRankStmt{{.*}}parent:[[#SELECTRANK]]
+    ! CHECK: <<SelectRankConstruct>>
+    ! CHECK: SelectRankStmt
     select rank(x)
-      ! CHECK: SelectRankCaseStmt{{.*}}parent:[[#SELECTRANK]]
+      ! CHECK: SelectRankCaseStmt
       rank (0)
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTRANK]]
+        ! CHECK: AssignmentStmt
         foo = 0
-      ! CHECK: SelectRankCaseStmt{{.*}}parent:[[#SELECTRANK]]
+      ! CHECK: SelectRankCaseStmt
       rank (*)
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTRANK]]
+        ! CHECK: AssignmentStmt
         foo = -1
-      ! CHECK: SelectRankCaseStmt{{.*}}parent:[[#SELECTRANK]]
+      ! CHECK: SelectRankCaseStmt
       rank (1)
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTRANK]]
+        ! CHECK: AssignmentStmt
         foo = 1
-      ! CHECK: SelectRankCaseStmt{{.*}}parent:[[#SELECTRANK]]
+      ! CHECK: SelectRankCaseStmt
       rank default
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTRANK]]
+        ! CHECK: AssignmentStmt
         foo = 2
-    ! CHECK: EndSelectStmt{{.*}}parent:[[#SELECTRANK]]
+    ! CHECK: EndSelectStmt
     end select
+    ! CHECK: <<EndSelectRankConstruct>>
   end function
 
-  ! CHECK: [[#%u, BAR:]]{{.*}}Function bar{{.*}}parent:[[#MOD]]
+  ! CHECK: Function bar
   function bar(x)
     class(*) :: x
-    ! CHECK: [[#%u, SELECTTYPE:]]{{.*}}<<SelectTypeConstruct>>{{.*}}parent:[[#BAR]]
-    ! CHECK: SelectTypeStmt{{.*}}parent:[[#SELECTTYPE]]
+    ! CHECK: <<SelectTypeConstruct>>
+    ! CHECK: SelectTypeStmt
     select type(x)
-      ! CHECK: TypeGuardStmt{{.*}}parent:[[#SELECTTYPE]]
+      ! CHECK: TypeGuardStmt
       type is (integer)
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTTYPE]]
+        ! CHECK: AssignmentStmt
         bar = 0
-      ! CHECK: TypeGuardStmt{{.*}}parent:[[#SELECTTYPE]]
+      ! CHECK: TypeGuardStmt
       class is (a_type)
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTTYPE]]
+        ! CHECK: AssignmentStmt
         bar = 1
-        ! CHECK: ReturnStmt{{.*}}parent:[[#SELECTTYPE]]
+        ! CHECK: ReturnStmt
         return
-      ! CHECK: TypeGuardStmt{{.*}}parent:[[#SELECTTYPE]]
+      ! CHECK: TypeGuardStmt
       class default
-        ! CHECK: AssignmentStmt{{.*}}parent:[[#SELECTTYPE]]
+        ! CHECK: AssignmentStmt
         bar = -1
-    ! CHECK: EndSelectStmt{{.*}}parent:[[#SELECTTYPE]]
+    ! CHECK: EndSelectStmt
     end select
+    ! CHECK: <<EndSelectTypeConstruct>>
   end function
 
-  ! CHECK: [[#%u, SUB:]]{{.*}}Subroutine sub{{.*}}parent:[[#MOD]]
+  ! CHECK: Subroutine sub
   subroutine sub(a)
     real(4):: a
     ! CompilerDirective
-    ! CHECK: <<CompilerDirective>>{{.*}}parent:[[#SUB]]
+    ! CHECK: <<CompilerDirective>>
     !DIR$ IGNORE_TKR a
   end subroutine
 
 
 end module
 
-! CHECK: [[#%u, ALTSUB:]]{{.*}}Subroutine altreturn{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine altreturn
 subroutine altreturn(i, j, *, *)
-  ! CHECK: [[#%u, IFTHEN:]]{{.*}}<<IfConstruct>>{{.*}}parent:[[#ALTSUB]]
+  ! CHECK: <<IfConstruct>>
   if (i>j) then
-    ! CHECK: ReturnStmt{{.*}}parent:[[#IFTHEN]]
+    ! CHECK: ReturnStmt
     return 1
   else
-    ! CHECK: ReturnStmt{{.*}}parent:[[#IFTHEN]]
+    ! CHECK: ReturnStmt
     return 2
   end if
+  ! CHECK: <<EndIfConstruct>>
 end subroutine
 
 
 ! Remaining TODO
 
-! CHECK: [[#%u, IO:]]{{.*}}Subroutine iostmts{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine iostmts
 subroutine iostmts(filename, a, b, c)
   character(*) :: filename
   integer :: length
   logical :: file_is_opened
   real, a, b ,c
-  ! CHECK: InquireStmt{{.*}}parent:[[#]]
+  ! CHECK: InquireStmt
   inquire(file=filename, opened=file_is_opened)
-  ! CHECK: [[#%u, IFTHEN:]]{{.*}}<<IfConstruct>>{{.*}}parent:[[#IO]]
+  ! CHECK: <<IfConstruct>>
   if (file_is_opened) then
-    ! CHECK: OpenStmt{{.*}}parent:[[#IFTHEN]]
+    ! CHECK: OpenStmt
     open(10, FILE=filename)
   end if
-  ! CHECK: ReadStmt{{.*}}parent:[[#IO]]
+  ! CHECK: <<EndIfConstruct>>
+  ! CHECK: ReadStmt
   read(10, *) length
-  ! CHECK: RewindStmt{{.*}}parent:[[#IO]]
+  ! CHECK: RewindStmt
   rewind 10
-  ! CHECK: NamelistStmt{{.*}}parent:[[#IO]]
+  ! CHECK: NamelistStmt
   namelist /nlist/ a, b, c
-  ! CHECK: WriteStmt{{.*}}parent:[[#IO]]
+  ! CHECK: WriteStmt
   write(10, NML=nlist)
-  ! CHECK: BackspaceStmt{{.*}}parent:[[#IO]]
+  ! CHECK: BackspaceStmt
   backspace(10)
-  ! CHECK: FormatStmt{{.*}}parent:[[#IO]]
+  ! CHECK: FormatStmt
 1 format (1PE12.4)
-  ! CHECK: WriteStmt{{.*}}parent:[[#IO]]
+  ! CHECK: WriteStmt
   write (10, 1) a
-  ! CHECK: EndfileStmt{{.*}}parent:[[#IO]]
+  ! CHECK: EndfileStmt
   endfile 10
-  ! CHECK: FlushStmt{{.*}}parent:[[#IO]]
+  ! CHECK: FlushStmt
   flush 10
-  ! CHECK: WaitStmt{{.*}}parent:[[#IO]]
+  ! CHECK: WaitStmt
   wait(10)
-  ! CHECK: CloseStmt{{.*}}parent:[[#IO]]
+  ! CHECK: CloseStmt
   close(10)
 end subroutine
 
 
-! CHECK: [[#%u, SUB2:]]{{.*}}Subroutine sub2{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine sub2
 subroutine sub2()
   integer :: i, j, k, l
   i = 0
 1 j = i
-  ! CHECK: ContinueStmt{{.*}}parent:[[#SUB2]]
+  ! CHECK: ContinueStmt
 2 continue
   i = i+1
 3 j = j+1
-! CHECK: ArithmeticIfStmt{{.*}}parent:[[#SUB2]]
+! CHECK: ArithmeticIfStmt
   if (j-i) 3, 4, 5
-  ! CHECK: GotoStmt{{.*}}parent:[[#SUB2]]
+  ! CHECK: GotoStmt
 4  goto 6
 
 ! FIXME: is name resolution on assigned goto broken/todo ?
-! WILLCHECK: AssignStmt{{.*}}parent:[[#SUB2]]
+! WILLCHECK: AssignStmt
 !55 assign 6 to label
-! WILLCHECK: AssignedGotoStmt{{.*}}parent:[[#SUB2]]
+! WILLCHECK: AssignedGotoStmt
 !66  go to label (5, 6)
 
-! CHECK: ComputedGotoStmt{{.*}}parent:[[#SUB2]]
+! CHECK: ComputedGotoStmt
   go to (5, 6), 1 + mod(i, 2)
 5 j = j + 1
 6 i = i + j/2
 
-  ! CHECK: [[#%u, DO1:]]{{.*}}<<DoConstruct>>{{.*}}parent:[[#SUB2]]
+  ! CHECK: <<DoConstruct>>
   do1: do k=1,10
-    ! CHECK: [[#%u, DO2:]]{{.*}}<<DoConstruct>>{{.*}}parent:[[#DO1]]
+    ! CHECK: <<DoConstruct>>
     do2: do l=5,20
-      ! CHECK: CycleStmt{{.*}}parent:[[#DO2]]
+      ! CHECK: CycleStmt
       cycle do1
-      ! CHECK: ExitStmt{{.*}}parent:[[#DO2]]
+      ! CHECK: ExitStmt
       exit do2
     end do do2
+    ! CHECK: <<EndDoConstruct>>
   end do do1
+  ! CHECK: <<EndDoConstruct>>
 
-  ! CHECK: PauseStmt{{.*}}parent:[[#SUB2]]
+  ! CHECK: PauseStmt
   pause 7
-  ! CHECK: StopStmt{{.*}}parent:[[#SUB2]]
+  ! CHECK: StopStmt
   stop
 end subroutine
 
 
-! CHECK: [[#%u, SUB3:]]{{.*}}Subroutine sub3{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine sub3
 subroutine sub3()
  print *, "normal"
-  ! CHECK: EntryStmt{{.*}}parent:[[#SUB3]]
+  ! CHECK: EntryStmt
  entry sub4entry()
  print *, "test"
 end subroutine
 
-! CHECK: [[#%u, SUB4:]]{{.*}}Subroutine sub4{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine sub4
 subroutine sub4(i, j)
   integer :: i
   print*, "test"
-  ! CHECK: DataStmt{{.*}}parent:[[#SUB4]]
+  ! CHECK: DataStmt
   data i /1/
 end subroutine

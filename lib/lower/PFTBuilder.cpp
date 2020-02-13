@@ -479,13 +479,11 @@ inline void annotateFuncCFG(PFT::FunctionLikeUnit &functionLikeUnit) {
 class PFTDumper {
 public:
   void dumpPFT(llvm::raw_ostream &outputStream, PFT::Program &pft) {
-    outputStream << "PFT root node:" << getNodeIndex(pft) << "\n";
     for (auto &unit : pft.getUnits()) {
       std::visit(common::visitors{
                      [&](PFT::BlockDataUnit &unit) {
                        outputStream << getNodeIndex(unit) << " ";
                        outputStream << "BlockData: ";
-                       dumpParentInfo(outputStream, unit);
                        outputStream << "\nEndBlockData\n\n";
                      },
                      [&](PFT::FunctionLikeUnit &func) {
@@ -509,17 +507,6 @@ public:
     });
   }
 
-  template <typename A>
-  void dumpParentInfo(llvm::raw_ostream &stream, const A &evalOrUnit) {
-    stream << " parent:";
-    std::visit(
-        common::visitors{
-            [&](const auto *parent) { stream << getNodeIndex(*parent); },
-        },
-        evalOrUnit.parent.p);
-    stream << " ";
-  }
-
   void dumpEvalList(llvm::raw_ostream &outputStream,
                     PFT::EvaluationCollection &evaluationCollection,
                     int indent = 1) {
@@ -530,13 +517,11 @@ public:
       llvm::StringRef name{evalName(eval)};
       if (auto *subs{eval.getConstructEvals()}) {
         outputStream << "<<" << name << ">>";
-        dumpParentInfo(outputStream, eval);
         outputStream << "\n";
         dumpEvalList(outputStream, *subs, indent + 1);
         outputStream << indentString << "<<End" << name << ">>\n";
       } else {
         outputStream << name;
-        dumpParentInfo(outputStream, eval);
         outputStream << ": " << eval.pos.ToString() + "\n";
       }
     }
@@ -581,7 +566,6 @@ public:
       name = "<anonymous>";
     }
     outputStream << unitKind << ' ' << name;
-    dumpParentInfo(outputStream, functionLikeUnit);
     if (header.size())
       outputStream << ": " << header;
     outputStream << '\n';
@@ -599,7 +583,6 @@ public:
                           PFT::ModuleLikeUnit &moduleLikeUnit) {
     outputStream << getNodeIndex(moduleLikeUnit) << " ";
     outputStream << "ModuleLike: ";
-    dumpParentInfo(outputStream, moduleLikeUnit);
     outputStream << "\nContains\n";
     for (auto &func : moduleLikeUnit.funcs)
       dumpFunctionLikeUnit(outputStream, func);

@@ -2,55 +2,59 @@
 
 ! Test Pre-FIR Tree captures OpenMP related constructs
 
-! CHECK: PFT root node:[[#%u, ROOT:]]
-! CHECK: [[#%u, PROG:]]{{.*}}Program test_omp{{.*}}parent:[[#ROOT]]
+! CHECK: Program test_omp
 program test_omp
-  ! CHECK: PrintStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: PrintStmt
   print *, "sequential"
 
-  ! CHECK: [[#%u, OMP_PAR:]]{{.*}}OpenMPConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<OpenMPConstruct>>
   !$omp parallel
-
-  ! CHECK: PrintStmt{{.*}}parent:[[#OMP_PAR]]
-  print *, "in omp //"
-  ! CHECK: [[#%u, OMP_LOOP:]]{{.*}}OpenMPConstruct{{.*}}parent:[[#OMP_PAR]]
-  !$omp do
-    ! CHECK: [[#%u, DO1:]]{{.*}}DoConstruct{{.*}}parent:[[#OMP_LOOP]]
-    ! CHECK: LabelDoStmt{{.*}}parent:[[#DO1]]
+    ! CHECK: PrintStmt
+    print *, "in omp //"
+    ! CHECK: <<OpenMPConstruct>>
+    !$omp do
+    ! CHECK: <<DoConstruct>>
+    ! CHECK: LabelDoStmt
     do i=1,100
-      ! CHECK: PrintStmt{{.*}}parent:[[#DO1]]
+      ! CHECK: PrintStmt
       print *, "in omp do"
-    ! CHECK: EndDoStmt{{.*}}parent:[[#DO1]]
+    ! CHECK: EndDoStmt
     end do
-  ! CHECK: OmpEndLoopDirective{{.*}}parent:[[#OMP_LOOP]]
-  !$omp end do
+    ! CHECK: <<EndDoConstruct>>
+    ! CHECK: OmpEndLoopDirective
+    !$omp end do
+    ! CHECK: <<EndOpenMPConstruct>>
 
-  ! CHECK: PrintStmt{{.*}}parent:[[#OMP_PAR]]
-  print *, "not in omp do"
+    ! CHECK: PrintStmt
+    print *, "not in omp do"
 
-  ! CHECK: [[#%u, OMP_LOOP2:]]{{.*}}OpenMPConstruct{{.*}}parent:[[#OMP_PAR]]
-  !$omp do
-    ! CHECK: [[#%u, DO2:]]{{.*}}DoConstruct{{.*}}parent:[[#OMP_LOOP2]]
-    ! CHECK: LabelDoStmt{{.*}}parent:[[#DO2]]
+    ! CHECK: <<OpenMPConstruct>>
+    !$omp do
+    ! CHECK: <<DoConstruct>>
+    ! CHECK: LabelDoStmt
     do i=1,100
-      ! CHECK: PrintStmt{{.*}}parent:[[#DO2]]
+      ! CHECK: PrintStmt
       print *, "in omp do"
-    ! CHECK: EndDoStmt{{.*}}parent:[[#DO2]]
+    ! CHECK: EndDoStmt
     end do
+    ! CHECK: <<EndDoConstruct>>
+    ! CHECK: <<EndOpenMPConstruct>>
     ! CHECK-NOT: OmpEndLoopDirective
-    ! CHECK: PrintStmt{{.*}}parent:[[#OMP_PAR]]
+    ! CHECK: PrintStmt
     print *, "no in omp do"
   !$omp end parallel
+    ! CHECK: <<EndOpenMPConstruct>>
 
-  ! CHECK: PrintStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: PrintStmt
   print *, "sequential again"
 
-  ! CHECK: [[#%u, OMP_TASK:]]{{.*}}OpenMPConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<OpenMPConstruct>>
   !$omp task
-    ! CHECK: PrintStmt{{.*}}parent:[[#OMP_TASK]]
+    ! CHECK: PrintStmt
     print *, "in task"
   !$omp end task
+  ! CHECK: <<EndOpenMPConstruct>>
 
-  ! CHECK: PrintStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: PrintStmt
   print *, "sequential again"
 end program
