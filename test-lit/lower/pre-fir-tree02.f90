@@ -129,7 +129,7 @@ program test_prog
 
   ! CHECK-NOT: ForAllConstruct
   ! CHECK: ForallStmt
-  forall (i = 1:5) x = y(i)
+  forall (i = 1:5) x(i) = y(i)
 
   ! CHECK: <<ForallConstruct>>
   ! CHECK: ForallConstructStmt
