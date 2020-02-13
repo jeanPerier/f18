@@ -3,7 +3,7 @@
 ! Test Pre-FIR Tree captures all the coarray related statements
 
 ! CHECK: PFT root node:[[#%u, ROOT:]]
-! CHECK: [[#%u, PROG:]]{{.*}}Subroutine test_coarray{{.*}}parent:[[#ROOT]]
+! CHECK: Subroutine test_coarray
 Subroutine test_coarray
   use iso_fortran_env, only: team_type, event_type, lock_type
   type(team_type) :: t
@@ -12,55 +12,60 @@ Subroutine test_coarray
   real :: y[10,*]
   integer :: counter[*]
   logical :: is_master
-  ! CHECK: [[#%u, CHANGE_TEAM:]]{{.*}}ChangeTeamConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<ChangeTeamConstruct>>
   change team(t, x[5,*] => y)
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#CHANGE_TEAM]]
+    ! CHECK: AssignmentStmt
     x = x[4, 1]
   end team
-  ! CHECK: FormTeamStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: <<EndChangeTeamConstruct>>
+  ! CHECK: FormTeamStmt
   form team(1, t)
 
-  ! CHECK: [[#%u, IF:]]{{.*}}IfConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<IfConstruct>>
   if (this_image() == 1) then
-    ! CHECK: EventPostStmt{{.*}}parent:[[#IF]]
+    ! CHECK: EventPostStmt
     event post (done)
   else
-    ! CHECK: EventWaitStmt{{.*}}parent:[[#IF]]
+    ! CHECK: EventWaitStmt
     event wait (done)
   end if
+  ! CHECK: <<EndIfConstruct>>
 
-  ! CHECK: [[#%u, CRITICAL:]]{{.*}}CriticalConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<CriticalConstruct>>
   critical
-    ! CHECK: AssignmentStmt{{.*}}parent:[[#CRITICAL]]
+    ! CHECK: AssignmentStmt
     counter[1] = counter[1] + 1
   end critical
+  ! CHECK: <<EndCriticalConstruct>>
 
-  ! CHECK: LockStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: LockStmt
   lock(alock)
-  ! CHECK: PrintStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: PrintStmt
   print *, "I have the lock"
-  ! CHECK: UnlockStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: UnlockStmt
   unlock(alock)
 
-  ! CHECK: SyncAllStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: SyncAllStmt
   sync all
-  ! CHECK: SyncMemoryStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: SyncMemoryStmt
   sync memory
-  ! CHECK: SyncTeamStmt{{.*}}parent:[[#PROG]]
+  ! CHECK: SyncTeamStmt
   sync team(t)
 
-  ! CHECK: [[#%u, IF2:]]{{.*}}IfConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<IfConstruct>>
   if (this_image() == 1) then
-    ! CHECK: SyncImagesStmt{{.*}}parent:[[#IF2]]
+    ! CHECK: SyncImagesStmt
     sync images(*)
   else
-    ! CHECK: SyncImagesStmt{{.*}}parent:[[#IF2]]
+    ! CHECK: SyncImagesStmt
     sync images(1)
   end if
+  ! CHECK: <<EndIfConstruct>>
 
-  ! CHECK: [[#%u, IF3:]]{{.*}}IfConstruct{{.*}}parent:[[#PROG]]
+  ! CHECK: <<IfConstruct>>
   if (y<0.) then
-    ! CHECK: FailImageStmt{{.*}}parent:[[#IF3]]
+    ! CHECK: FailImageStmt
    fail image
   end if
+  ! CHECK: <<EndIfConstruct>>
 end
