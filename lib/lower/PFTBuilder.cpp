@@ -499,6 +499,7 @@ public:
     }
     resetIndexes();
   }
+
   llvm::StringRef evalName(PFT::Evaluation &eval) {
     return eval.visit(common::visitors{
         [](const PFT::CGJump) { return "CGJump"; },
@@ -547,38 +548,38 @@ public:
     llvm::StringRef unitKind{};
     std::string name{};
     std::string header{};
-    std::visit(
-        common::visitors{
-            [&](const parser::Statement<parser::ProgramStmt> *statement) {
-              unitKind = "Program";
-              name = statement->statement.v.ToString();
-            },
-            [&](const parser::Statement<parser::FunctionStmt> *statement) {
-              unitKind = "Function";
-              name = std::get<parser::Name>(statement->statement.t).ToString();
-              header = statement->source.ToString();
-            },
-            [&](const parser::Statement<parser::SubroutineStmt> *statement) {
-              unitKind = "Subroutine";
-              name = std::get<parser::Name>(statement->statement.t).ToString();
-              header = statement->source.ToString();
-            },
-            [&](const parser::Statement<parser::MpSubprogramStmt> *statement) {
-              unitKind = "MpSubprogram";
-              name = statement->statement.v.ToString();
-              header = statement->source.ToString();
-            },
-            [&](auto *) {
-              if (std::get_if<const parser::Statement<parser::EndProgramStmt>
-                                  *>(&functionLikeUnit.funStmts.back())) {
+    if (functionLikeUnit.beginStmt) {
+      std::visit(
+          common::visitors{
+              [&](const parser::Statement<parser::ProgramStmt> *statement) {
                 unitKind = "Program";
-                name = "<anonymous>";
-              } else {
-                unitKind = ">>>>> Error - no program unit <<<<<";
-              }
-            },
-        },
-        functionLikeUnit.funStmts.front());
+                name = statement->statement.v.ToString();
+              },
+              [&](const parser::Statement<parser::FunctionStmt> *statement) {
+                unitKind = "Function";
+                name =
+                    std::get<parser::Name>(statement->statement.t).ToString();
+                header = statement->source.ToString();
+              },
+              [&](const parser::Statement<parser::SubroutineStmt> *statement) {
+                unitKind = "Subroutine";
+                name =
+                    std::get<parser::Name>(statement->statement.t).ToString();
+                header = statement->source.ToString();
+              },
+              [&](const parser::Statement<parser::MpSubprogramStmt>
+                      *statement) {
+                unitKind = "MpSubprogram";
+                name = statement->statement.v.ToString();
+                header = statement->source.ToString();
+              },
+              [&](auto *) {},
+          },
+          *functionLikeUnit.beginStmt);
+    } else {
+      unitKind = "Program";
+      name = "<anonymous>";
+    }
     outputStream << unitKind << ' ' << name;
     dumpParentInfo(outputStream, functionLikeUnit);
     if (header.size())
@@ -627,6 +628,17 @@ private:
   std::size_t nextIndex{1}; // 0 is the root
 };
 
+template <typename A, typename T>
+PFT::FunctionLikeUnit::FunctionStatement getFunctionStmt(const T &func) {
+  return PFT::FunctionLikeUnit::FunctionStatement{
+      &std::get<parser::Statement<A>>(func.t)};
+}
+template <typename A, typename T>
+PFT::ModuleLikeUnit::ModuleStatement getModuleStmt(const T &mod) {
+  return PFT::ModuleLikeUnit::ModuleStatement{
+      &std::get<parser::Statement<A>>(mod.t)};
+}
+
 } // namespace
 
 PFT::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
@@ -636,53 +648,39 @@ PFT::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
       std::get<std::optional<parser::Statement<parser::ProgramStmt>>>(func.t)};
   if (ps.has_value()) {
     const parser::Statement<parser::ProgramStmt> &statement{ps.value()};
-    funStmts.push_back(&statement);
+    beginStmt = &statement;
   }
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::EndProgramStmt>>(func.t));
+  endStmt = getFunctionStmt<parser::EndProgramStmt>(func);
 }
 
 PFT::FunctionLikeUnit::FunctionLikeUnit(const parser::FunctionSubprogram &func,
                                         const PFT::ParentType &parent)
-    : ProgramUnit{func, parent} {
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::FunctionStmt>>(func.t));
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::EndFunctionStmt>>(func.t));
-}
+    : ProgramUnit{func, parent},
+      beginStmt{getFunctionStmt<parser::FunctionStmt>(func)},
+      endStmt{getFunctionStmt<parser::EndFunctionStmt>(func)} {}
 
 PFT::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SubroutineSubprogram &func, const PFT::ParentType &parent)
-    : ProgramUnit{func, parent} {
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::SubroutineStmt>>(func.t));
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::EndSubroutineStmt>>(func.t));
-}
+    : ProgramUnit{func, parent},
+      beginStmt{getFunctionStmt<parser::SubroutineStmt>(func)},
+      endStmt{getFunctionStmt<parser::EndSubroutineStmt>(func)} {}
 
 PFT::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SeparateModuleSubprogram &func, const PFT::ParentType &parent)
-    : ProgramUnit{func, parent} {
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::MpSubprogramStmt>>(func.t));
-  funStmts.push_back(
-      &std::get<parser::Statement<parser::EndMpSubprogramStmt>>(func.t));
-}
+    : ProgramUnit{func, parent},
+      beginStmt{getFunctionStmt<parser::MpSubprogramStmt>(func)},
+      endStmt{getFunctionStmt<parser::EndMpSubprogramStmt>(func)} {}
 
 PFT::ModuleLikeUnit::ModuleLikeUnit(const parser::Module &m,
                                     const PFT::ParentType &parent)
-    : ProgramUnit{m, parent} {
-  modStmts.push_back(&std::get<parser::Statement<parser::ModuleStmt>>(m.t));
-  modStmts.push_back(&std::get<parser::Statement<parser::EndModuleStmt>>(m.t));
-}
+    : ProgramUnit{m, parent}, beginStmt{getModuleStmt<parser::ModuleStmt>(m)},
+      endStmt{getModuleStmt<parser::EndModuleStmt>(m)} {}
 
 PFT::ModuleLikeUnit::ModuleLikeUnit(const parser::Submodule &m,
                                     const PFT::ParentType &parent)
-    : ProgramUnit{m, parent} {
-  modStmts.push_back(&std::get<parser::Statement<parser::SubmoduleStmt>>(m.t));
-  modStmts.push_back(
-      &std::get<parser::Statement<parser::EndSubmoduleStmt>>(m.t));
-}
+    : ProgramUnit{m, parent}, beginStmt{getModuleStmt<parser::SubmoduleStmt>(
+                                  m)},
+      endStmt{getModuleStmt<parser::EndSubmoduleStmt>(m)} {}
 
 PFT::BlockDataUnit::BlockDataUnit(const parser::BlockData &bd,
                                   const PFT::ParentType &parent)
