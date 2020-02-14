@@ -27,7 +27,7 @@
 /// evaluations. The resulting PFT structure can then be used to create FIR.
 
 namespace Fortran::lower {
-namespace PFT {
+namespace pft {
 
 struct Evaluation;
 struct Program;
@@ -190,7 +190,7 @@ struct Evaluation {
   /// Construct ctor
   template <typename A>
   Evaluation(const A &a, const ParentType &parent) : u{&a}, parent{parent} {
-    static_assert(PFT::isConstruct<A>, "must be a construct");
+    static_assert(pft::isConstruct<A>, "must be a construct");
   }
 
   constexpr bool isActionOrGenerated() const {
@@ -208,7 +208,7 @@ struct Evaluation {
           using T = std::decay_t<decltype(r)>;
           static constexpr bool isStmt{isActionStmt<T> || isOtherStmt<T> ||
                                        isConstructStmt<T>};
-          static_assert(!(isStmt && PFT::isConstruct<T>),
+          static_assert(!(isStmt && pft::isConstruct<T>),
                         "statement classification is inconsistent");
           return isStmt;
         },
@@ -376,18 +376,18 @@ private:
   std::list<Units> units;
 };
 
-} // namespace PFT
+} // namespace pft
 
 /// Create an PFT from the parse tree
-std::unique_ptr<PFT::Program> createPFT(const parser::Program &root);
+std::unique_ptr<pft::Program> createPFT(const parser::Program &root);
 
 /// Decorate the PFT with control flow annotations
 ///
 /// The PFT must be decorated with control-flow annotations to prepare it for
 /// use in generating a CFG-like structure.
-void annotateControl(PFT::Program &);
+void annotateControl(pft::Program &);
 
-void dumpPFT(llvm::raw_ostream &o, PFT::Program &);
+void dumpPFT(llvm::raw_ostream &o, pft::Program &);
 
 } // namespace Fortran::lower
 
