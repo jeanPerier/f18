@@ -10,6 +10,7 @@ subroutine foo()
     ! CHECK: PrintStmt
     print *, "hey"
     ! CHECK: <<DoConstruct>>
+    ! CHECK: NonLabelDoStmt
     do j=1,5
       ! CHECK: PrintStmt
       print *, "hello", i, j

@@ -489,7 +489,6 @@ int main(int argc, char *const argv[]) {
       driver.dumpParseTree = true;
     } else if (arg == "-fdebug-pre-fir-tree") {
       driver.dumpPreFirTree = true;
-    } else if (arg == "-fdebug-resolve-names") {
     } else if (arg == "-fdebug-dump-symbols") {
       driver.dumpSymbols = true;
     } else if (arg == "-fdebug-resolve-names") {
