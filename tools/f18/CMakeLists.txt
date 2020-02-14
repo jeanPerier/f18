@@ -9,6 +9,7 @@
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include")
 
+
 add_executable(f18
   f18.cpp
   dump.cpp
@@ -18,9 +19,15 @@ target_link_libraries(f18
   FortranParser
   FortranEvaluate
   FortranSemantics
-  LLVMSupport
-  FortranLower
 )
+
+if (FLANG_CAN_LINK_WITH_LLVM)
+  add_compile_definitions(LINK_WITH_LLVM)
+  target_link_libraries(f18
+    LLVMSupport
+    FortranLower
+  )
+endif()
 
 add_executable(f18-parse-demo
   f18-parse-demo.cpp

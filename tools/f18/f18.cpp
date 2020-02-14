@@ -11,7 +11,6 @@
 #include "flang/common/Fortran-features.h"
 #include "flang/common/default-kinds.h"
 #include "flang/evaluate/expression.h"
-#include "flang/lower/PFTBuilder.h"
 #include "flang/parser/characters.h"
 #include "flang/parser/dump-parse-tree.h"
 #include "flang/parser/message.h"
@@ -23,7 +22,10 @@
 #include "flang/semantics/expression.h"
 #include "flang/semantics/semantics.h"
 #include "flang/semantics/unparse-with-symbols.h"
+#ifdef LINK_WITH_LLVM
+#include "flang/lower/PFTBuilder.h"
 #include "llvm/Support/raw_ostream.h"
+#endif
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -311,6 +313,10 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
         nullptr /* action before each statement */, &asFortran);
     return {};
   }
+#ifdef LINK_WITH_LLVM
+  // This code is temporarily only enabled if a compatible
+  // LLVM version was found. This is to help the transition
+  // towards mandatory LLVM dependency.
   if (driver.dumpPreFirTree) {
     if (auto ast{Fortran::lower::createPFT(parseTree)}) {
       Fortran::lower::annotateControl(*ast);
@@ -320,6 +326,7 @@ std::string CompileFortran(std::string path, Fortran::parser::Options options,
       exitStatus = EXIT_FAILURE;
     }
   }
+#endif
   if (driver.parseOnly) {
     return {};
   }
