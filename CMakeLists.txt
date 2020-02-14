@@ -121,6 +121,30 @@ if(CMAKE_COMPILER_IS_GNUCXX OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
    endif()
 endif()
 
+# Check if the provided LLVM version can actually link with flang libraries built
+# with the current options.
+try_run(RUN_WITH_LLVM_DEPS COMPILE_WITH_LLVM_DEPS
+  ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-llvm.cpp
+  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${LLVM_INCLUDE_DIRS}"
+  LINK_LIBRARIES ${LLVM_COMMON_LIBS}
+  OUTPUT_VARIABLE  LLVM_DEPS_TEST_OUT
+)
+if (RUN_WITH_LLVM_DEPS EQUAL 0)
+  message(STATUS "Found LLVM links and runs with flang")
+  set(FLANG_CAN_LINK_WITH_LLVM TRUE)
+else()
+  set(FLANG_CAN_LINK_WITH_LLVM FALSE)
+  if (COMPILE_WITH_LLVM_DEPS)
+    message(WARNING "Found LLVM links but does not run")
+  else()
+    message(WARNING "Found LLVM does not link with flang")
+  endif()
+  message(STATUS "Re-run cmake with -DWHY_LLVM_IS_NOT_COMPATIBLE for more info abou LLVM incompatibility")
+  if (WHY_LLVM_IS_NOT_COMPATIBLE)
+    message(STATUS ${LLVM_DEPS_TEST_OUT})
+  endif()
+endif()
+
 set(FLANG_VERSION_MAJOR      "0")
 set(FLANG_VERSION_MINOR      "1")
 set(FLANG_VERSION_PATCHLEVEL "0")
