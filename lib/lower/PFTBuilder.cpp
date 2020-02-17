@@ -689,7 +689,7 @@ void annotateControl(pft::Program &pft) {
   }
 }
 
-/// Dump an PFT.
+/// Dump a PFT.
 void dumpPFT(llvm::raw_ostream &outputStream, pft::Program &pft) {
   PFTDumper{}.dumpPFT(outputStream, pft);
 }
