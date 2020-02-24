@@ -22,7 +22,6 @@ class NamelistGroup;
 }
 
 namespace Fortran::runtime::io {
-
 class IoStatementState;
 using Cookie = IoStatementState *;
 using ExternalUnit = int;
@@ -312,4 +311,5 @@ enum Iostat IONAME(EndIoStatement)(Cookie);
 
 }  // extern "C"
 }
+
 #endif
