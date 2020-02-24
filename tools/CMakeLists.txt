@@ -7,5 +7,7 @@
 #===------------------------------------------------------------------------===#
 
 add_subdirectory(f18)
-add_subdirectory(bbc)
-add_subdirectory(tco)
+if(LINK_WITH_FIR)
+  add_subdirectory(bbc)
+  add_subdirectory(tco)
+endif()
