@@ -1,9 +1,15 @@
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error -Wno-unused-parameter")
+
 add_library(FortranLower
   PFTBuilder.cpp
 )
 
 target_link_libraries(FortranLower
-  LLVMSupport
+  FIRSupport
+  MLIRAffineOps
+  MLIRLLVMIR
+  MLIRLoopToStandard
+  MLIRStandardOps
 )
 
 install (TARGETS FortranLower

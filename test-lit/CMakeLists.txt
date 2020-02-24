@@ -20,11 +20,12 @@ set(FLANG_TEST_DEPENDS
   FileCheck
   count
   not
+  tco
 )
+
 add_lit_testsuite(check-all "Running the Flang regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
   PARAMS ${FLANG_TEST_PARAMS}
   DEPENDS ${FLANG_TEST_DEPENS}
-  )
+)
 set_target_properties(check-all PROPERTIES FOLDER "Tests")
-
