@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "flang/optimizer/Dialect/FIRDialect.h"
-#include "flang/optimizer/Support/InternalNames.h"
 #include "flang/optimizer/Support/KindMapping.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Module.h"
@@ -81,8 +80,6 @@ int compileFIR() {
   ToolOutputFile out(outputFilename, ec, sys::fs::OF_None);
 
   // run passes
-  fir::NameUniquer uniquer;
-  fir::KindMapping kindMap{context.get()};
   mlir::PassManager pm{context.get()};
   mlir::applyPassManagerCLOptions(pm);
   if (emitFir) {
