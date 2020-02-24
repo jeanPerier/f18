@@ -8,6 +8,5 @@
 
 add_subdirectory(f18)
 if(LINK_WITH_FIR)
-  add_subdirectory(bbc)
   add_subdirectory(tco)
 endif()
