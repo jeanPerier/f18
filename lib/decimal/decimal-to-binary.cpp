@@ -401,7 +401,7 @@ template ConversionToBinaryResult<64> ConvertToBinary<64>(
     const char *&, enum FortranRounding);
 template ConversionToBinaryResult<112> ConvertToBinary<112>(
     const char *&, enum FortranRounding);
-  
+
 extern "C" {
 enum ConversionResultFlags ConvertDecimalToFloat(
     const char **p, float *f, enum FortranRounding rounding) {
