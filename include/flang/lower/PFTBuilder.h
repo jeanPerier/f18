@@ -1,22 +1,30 @@
-//===-- flang/lower/PFTBuilder.h --------------------------------*- C++ -*-===//
+//===-- include/flang/lower/PFTBuilder.h ------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-//
-// This defines the PFT abstraction interface.
-//
-//===----------------------------------------------------------------------===//
 
-#ifndef FORTRAN_LOWER_PFTBUILDER_H_
-#define FORTRAN_LOWER_PFTBUILDER_H_
+#ifndef FORTRAN_LOWER_PFT_BUILDER_H_
+#define FORTRAN_LOWER_PFT_BUILDER_H_
 
 #include "flang/common/template.h"
 #include "flang/parser/parse-tree.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
+
+/// Build a light-weight tree over the parse-tree to help with lowering to FIR.
+/// It is named Pre-FIR Tree (PFT) to underline it has no other usage than
+/// helping lowering to FIR.
+/// The PFT will capture pointers back into the parse tree, so the parse tree
+/// data structure may <em>not</em> be changed between the construction of the
+/// PFT and all of its uses.
+///
+/// The PFT captures a structured view of the program.  The program is a list of
+/// units.  Function like units will contain lists of evaluations.  Evaluations
+/// are either statements or constructs, where a construct contains a list of
+/// evaluations. The resulting PFT structure can then be used to create FIR.
 
 namespace Fortran::lower {
 namespace pft {
@@ -105,22 +113,22 @@ using ConstructStmts = std::tuple<
     parser::ForallConstructStmt, parser::EndForallStmt>;
 
 template <typename A>
-static constexpr bool isActionStmt{common::HasMember<A, ActionStmts>};
+constexpr static bool isActionStmt{common::HasMember<A, ActionStmts>};
 
 template <typename A>
-static constexpr bool isConstruct{common::HasMember<A, Constructs>};
+constexpr static bool isConstruct{common::HasMember<A, Constructs>};
 
 template <typename A>
-static constexpr bool isConstructStmt{common::HasMember<A, ConstructStmts>};
+constexpr static bool isConstructStmt{common::HasMember<A, ConstructStmts>};
 
 template <typename A>
-static constexpr bool isOtherStmt{common::HasMember<A, OtherStmts>};
+constexpr static bool isOtherStmt{common::HasMember<A, OtherStmts>};
 
 template <typename A>
-static constexpr bool isGenerated{std::is_same_v<A, CGJump>};
+constexpr static bool isGenerated{std::is_same_v<A, CGJump>};
 
 template <typename A>
-static constexpr bool isFunctionLike{common::HasMember<
+constexpr static bool isFunctionLike{common::HasMember<
     A, std::tuple<parser::MainProgram, parser::FunctionSubprogram,
                   parser::SubroutineSubprogram,
                   parser::SeparateModuleSubprogram>>};
@@ -135,10 +143,39 @@ struct Evaluation {
   /// Hide non-nullable pointers to the parse-tree node.
   template <typename A>
   using MakeRefType = const A *const;
-
   using EvalVariant =
       common::CombineVariants<common::MapTemplate<MakeRefType, EvalTuple>,
                               std::variant<CGJump>>;
+  template <typename A>
+  constexpr auto visit(A visitor) const {
+    return std::visit(common::visitors{
+                          [&](const auto *p) { return visitor(*p); },
+                          [&](auto &r) { return visitor(r); },
+                      },
+                      u);
+  }
+  template <typename A>
+  constexpr const A *getIf() const {
+    if constexpr (!std::is_same_v<A, CGJump>) {
+      if (auto *ptr{std::get_if<MakeRefType<A>>(&u)}) {
+        return *ptr;
+      }
+    } else {
+      return std::get_if<CGJump>(&u);
+    }
+    return nullptr;
+  }
+  template <typename A>
+  constexpr bool isA() const {
+    if constexpr (!std::is_same_v<A, CGJump>) {
+      return std::holds_alternative<MakeRefType<A>>(u);
+    }
+    return std::holds_alternative<CGJump>(u);
+  }
+
+  Evaluation() = delete;
+  Evaluation(const Evaluation &) = delete;
+  Evaluation(Evaluation &&) = default;
 
   /// General ctor
   template <typename A>
@@ -156,56 +193,20 @@ struct Evaluation {
     static_assert(pft::isConstruct<A>, "must be a construct");
   }
 
-  Evaluation() = delete;
-  Evaluation(const Evaluation &) = delete;
-  Evaluation(Evaluation &&) = default;
-
-  template <typename A>
-  constexpr auto visit(A visitor) const {
-    return std::visit(common::visitors{
-                          [&](const auto *p) { return visitor(*p); },
-                          [&](auto &r) { return visitor(r); },
-                      },
-                      u);
-  }
-  
-  template <typename A>
-  constexpr const A *getIf() const {
-    if constexpr (!std::is_same_v<A, CGJump>) {
-      if (auto *ptr{std::get_if<MakeRefType<A>>(&u)})
-        return *ptr;
-    } else {
-      return std::get_if<CGJump>(&u);
-    }
-    return nullptr;
-  }
-  
-  template <typename A>
-  constexpr bool isA() const {
-    if constexpr (!std::is_same_v<A, CGJump>)
-      return std::holds_alternative<MakeRefType<A>>(u);
-    return std::holds_alternative<CGJump>(u);
-  }
-
   constexpr bool isActionOrGenerated() const {
     return visit(common::visitors{
         [](auto &r) {
           using T = std::decay_t<decltype(r)>;
-          return pft::isActionStmt<T> || isGenerated<T>;
+          return isActionStmt<T> || isGenerated<T>;
         },
     });
-  }
-
-  constexpr bool isActionStmt() const {
-    return visit(common::visitors{
-        [](auto &r) { return pft::isActionStmt<std::decay_t<decltype(r)>>; }});
   }
 
   constexpr bool isStmt() const {
     return visit(common::visitors{
         [](auto &r) {
           using T = std::decay_t<decltype(r)>;
-          static constexpr bool isStmt{pft::isActionStmt<T> || isOtherStmt<T> ||
+          static constexpr bool isStmt{isActionStmt<T> || isOtherStmt<T> ||
                                        isConstructStmt<T>};
           static_assert(!(isStmt && pft::isConstruct<T>),
                         "statement classification is inconsistent");
@@ -213,7 +214,6 @@ struct Evaluation {
         },
     });
   }
-  
   constexpr bool isConstruct() const { return !isStmt(); }
 
   /// Set the type of originating control flow type for this evaluation.
@@ -234,10 +234,12 @@ struct Evaluation {
 
   EvaluationCollection *getConstructEvals() {
     auto *evals{subs.get()};
-    if (isStmt() && !evals)
+    if (isStmt() && !evals) {
       return nullptr;
-    if (isConstruct() && evals)
+    }
+    if (isConstruct() && evals) {
       return evals;
+    }
     llvm_unreachable("evaluation subs is inconsistent");
     return nullptr;
   }
@@ -305,15 +307,12 @@ struct FunctionLikeUnit : public ProgramUnit {
     return std::holds_alternative<
         const parser::Statement<parser::EndProgramStmt> *>(endStmt);
   }
-  
   const parser::FunctionStmt *getFunction() {
     return getA<parser::FunctionStmt>();
   }
-  
   const parser::SubroutineStmt *getSubroutine() {
     return getA<parser::SubroutineStmt>();
   }
-  
   const parser::MpSubprogramStmt *getMPSubp() {
     return getA<parser::MpSubprogramStmt>();
   }
@@ -363,7 +362,7 @@ struct BlockDataUnit : public ProgramUnit {
   BlockDataUnit(const BlockDataUnit &) = delete;
 };
 
-/// A Program is the top-level root of the PFT.
+/// A Program is the top-level PFT
 struct Program {
   using Units = std::variant<FunctionLikeUnit, ModuleLikeUnit, BlockDataUnit>;
 
@@ -373,38 +372,23 @@ struct Program {
 
   std::list<Units> &getUnits() { return units; }
 
-  /// LLVM dump method on a Program.
-  void dump();
-
 private:
   std::list<Units> units;
 };
 
 } // namespace pft
 
-/// Create an PFT from the parse tree.
-///
-/// Build a light-weight tree over the parse-tree to help with lowering to FIR.
-/// It is named Pre-FIR Tree (PFT) to underline it has no other usage than
-/// helping lowering to FIR.  The PFT will capture pointers back into the parse
-/// tree, so the parse tree data structure may <em>not</em> be changed between
-/// the construction of the PFT and all of its uses.
-///
-/// The PFT captures a structured view of the program.  The program is a list of
-/// units.  Function like units will contain lists of evaluations.  Evaluations
-/// are either statements or constructs, where a construct contains a list of
-/// evaluations. The resulting PFT structure can then be used to create FIR.
+/// Create an PFT from the parse tree
 std::unique_ptr<pft::Program> createPFT(const parser::Program &root);
 
 /// Decorate the PFT with control flow annotations
 ///
 /// The PFT must be decorated with control-flow annotations to prepare it for
 /// use in generating a CFG-like structure.
-void annotateControl(pft::Program &pft);
+void annotateControl(pft::Program &);
 
-/// Dumper for displaying a PFT structure.
-void dumpPFT(llvm::raw_ostream &o, pft::Program &pft);
+void dumpPFT(llvm::raw_ostream &o, pft::Program &);
 
 } // namespace Fortran::lower
 
-#endif // FORTRAN_LOWER_PFTBUILDER_H_
+#endif // FORTRAN_LOWER_PFT_BUILDER_H_
