@@ -1,6 +1,7 @@
 // Test the FIR types
 
 // RUN: tco -emit-fir %s | tco -emit-fir | FileCheck %s
+// UNSUPPORTED: !fir
 
 // CHECK-LABEL: func @it1() -> !fir.int<4>
 // CHECK-LABEL: func @it2() -> !fir.real<8>
