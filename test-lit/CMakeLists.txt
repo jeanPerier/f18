@@ -20,6 +20,7 @@ set(FLANG_TEST_DEPENDS
   FileCheck
   count
   not
+  tco
 )
 add_lit_testsuite(check-all "Running the Flang regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
