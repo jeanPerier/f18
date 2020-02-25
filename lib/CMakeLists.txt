@@ -12,3 +12,7 @@ add_subdirectory(decimal)
 add_subdirectory(lower)
 add_subdirectory(parser)
 add_subdirectory(semantics)
+
+if(LINK_WITH_FIR)
+  add_subdirectory(optimizer)
+endif()
