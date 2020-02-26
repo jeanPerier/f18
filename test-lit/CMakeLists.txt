@@ -31,6 +31,7 @@ set(FLANG_TEST_DEPENDS
   FileCheck
   count
   not
+  bbc
   tco
 )
 
