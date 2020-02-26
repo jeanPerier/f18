@@ -553,29 +553,15 @@ class fir_SwitchTerminatorOp<string mnemonic, list<OpTrait> traits = []> :
 
   let successors = (successor VariadicSuccessor<AnySuccessor>:$targets);
 
-  let builders = [OpBuilder<
-    "Builder *, OperationState &result, Value selector,"
-    "ValueRange properOperands, ArrayRef<Block *> destinations,"
-    "ArrayRef<ValueRange> operands = {},"
-    "ArrayRef<NamedAttribute> attributes = {}",
-    [{
-      result.addOperands(selector);
-      result.addOperands(properOperands);
-      for (auto kvp : llvm::zip(destinations, operands)) {
-        result.addSuccessors(std::get<0>(kvp));
-        result.addOperands(std::get<1>(kvp));
-      }
-      result.addAttributes(attributes);
-    }]
-  >];
-
   string extraSwitchClassDeclaration = [{
     using Conditions = mlir::Value;
 
     static constexpr llvm::StringRef getCasesAttr() { return "case_tags"; }
 
     // The number of destination conditions that may be tested
-    unsigned getNumConditions() { return getNumDest(); }
+    unsigned getNumConditions() {
+      return getAttrOfType<mlir::ArrayAttr>(getCasesAttr()).size();
+    }
 
     // The selector is the value being tested to determine the destination
     mlir::Value getSelector() { return selector(); }
@@ -602,11 +588,50 @@ class fir_SwitchTerminatorOp<string mnemonic, list<OpTrait> traits = []> :
       else
         p.printSuccessor(succ);
     }
+
+    unsigned targetOffsetSize();
   }];
 }
 
 class fir_IntegralSwitchTerminatorOp<string mnemonic,
     list<OpTrait> traits = []> : fir_SwitchTerminatorOp<mnemonic, traits> {
+
+  let skipDefaultBuilders = 1;
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, Value selector,"
+    "ArrayRef<int64_t> compareOperands, ArrayRef<Block *> destinations,"
+    "ArrayRef<ValueRange> destOperands = {},"
+    "ArrayRef<NamedAttribute> attributes = {}",
+    [{
+      result.addOperands(selector);
+      llvm::SmallVector<mlir::Attribute, 8> ivalues;
+      for (auto iv : compareOperands)
+        ivalues.push_back(builder->getI64IntegerAttr(iv));
+      ivalues.push_back(builder->getUnitAttr());
+      result.addAttribute(getCasesAttr(), builder->getArrayAttr(ivalues));
+      const auto count = destinations.size();
+      for (auto d : destinations)
+        result.addSuccessors(d);
+      const auto opCount = destOperands.size();
+      llvm::SmallVector<int32_t, 8> argOffs;
+      int32_t sumArgs = 0;
+      for (std::remove_const_t<decltype(count)> i = 0; i != count; ++i) {
+        if (i < opCount) {
+          result.addOperands(destOperands[i]);
+          const auto argSz = destOperands[i].size();
+          argOffs.push_back(argSz);
+          sumArgs += argSz;
+        } else {
+          argOffs.push_back(0);
+        }
+      }
+      result.addAttribute(getOperandSegmentSizeAttr(),
+                          builder->getI32VectorAttr({1, 0, sumArgs}));
+      result.addAttribute(getTargetOffsetAttr(),
+                          builder->getI32VectorAttr(argOffs));
+      result.addAttributes(attributes);
+    }]
+  >];
 
   let parser = [{
     mlir::OpAsmParser::OperandType selector;
@@ -680,14 +705,17 @@ class fir_IntegralSwitchTerminatorOp<string mnemonic,
           getSelector().getType().isa<fir::IntType>()))
       return emitOpError("must be an integer");
     auto cases = getAttrOfType<mlir::ArrayAttr>(getCasesAttr()).getValue();
-    auto count = getNumConditions();
+    auto count = getNumDest();
+    if (count == 0)
+      return emitOpError("must have at least one successor");
+    if (getNumConditions() != count)
+      return emitOpError("number of cases and targets don't match");
+    if (targetOffsetSize() != count)
+      return emitOpError("incorrect number of successor operand groups");
     for (decltype(count) i = 0; i != count; ++i) {
       auto &attr = cases[i];
-      if (attr.isa<mlir::IntegerAttr>() || attr.isa<mlir::UnitAttr>()) {
-        // ok
-      } else {
+      if (!(attr.isa<mlir::IntegerAttr>() || attr.isa<mlir::UnitAttr>()))
         return emitOpError("invalid case alternative");
-      }
     }
     return mlir::success();
   }];
@@ -756,6 +784,56 @@ def fir_SelectCaseOp : fir_SwitchTerminatorOp<"select_case"> {
     ```
   }];
 
+  let skipDefaultBuilders = 1;
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, Value selector,"
+    "ArrayRef<mlir::Attribute> compareAttrs, ArrayRef<ValueRange> cmpOperands,"
+    "ArrayRef<Block *> destinations, ArrayRef<ValueRange> destOperands = {},"
+    "ArrayRef<NamedAttribute> attributes = {}",
+    [{
+      result.addOperands(selector);
+      result.addAttribute(getCasesAttr(), builder->getArrayAttr(compareAttrs));
+      llvm::SmallVector<int32_t, 8> operOffs;
+      int32_t operSize = 0;
+      for (auto attr : compareAttrs) {
+        if (attr.isa<fir::ClosedIntervalAttr>()) {
+          operOffs.push_back(2);
+          operSize += 2;
+        } else if (attr.isa<mlir::UnitAttr>()) {
+          operOffs.push_back(0);
+        } else {
+          operOffs.push_back(1);
+          ++operSize;
+        }
+      }
+      for (auto ops : cmpOperands)
+        result.addOperands(ops);
+      result.addAttribute(getCompareOffsetAttr(),
+                          builder->getI32VectorAttr(operOffs));
+      const auto count = destinations.size();
+      for (auto d : destinations)
+        result.addSuccessors(d);
+      const auto opCount = destOperands.size();
+      llvm::SmallVector<int32_t, 8> argOffs;
+      int32_t sumArgs = 0;
+      for (std::remove_const_t<decltype(count)> i = 0; i != count; ++i) {
+        if (i < opCount) {
+          result.addOperands(destOperands[i]);
+          const auto argSz = destOperands[i].size();
+          argOffs.push_back(argSz);
+          sumArgs += argSz;
+        } else {
+          argOffs.push_back(0);
+        }
+      }
+      result.addAttribute(getOperandSegmentSizeAttr(),
+                          builder->getI32VectorAttr({1, operSize, sumArgs}));
+      result.addAttribute(getTargetOffsetAttr(),
+                          builder->getI32VectorAttr(argOffs));
+      result.addAttributes(attributes);
+    }]
+  >];
+
   let parser = "return parseSelectCase(parser, result);";
 
   let printer = [{
@@ -792,23 +870,30 @@ def fir_SelectCaseOp : fir_SwitchTerminatorOp<"select_case"> {
           getSelector().getType().isa<fir::CharacterType>()))
       return emitOpError("must be an integer, character, or logical");
     auto cases = getAttrOfType<mlir::ArrayAttr>(getCasesAttr()).getValue();
-    auto count = getNumConditions();
+    auto count = getNumDest();
+    if (count == 0)
+      return emitOpError("must have at least one successor");
+    if (getNumConditions() != count)
+      return emitOpError("number of conditions and successors don't match");
+    if (compareOffsetSize() != count)
+      return emitOpError("incorrect number of compare operand groups");
+    if (targetOffsetSize() != count)
+      return emitOpError("incorrect number of successor operand groups");
     for (decltype(count) i = 0; i != count; ++i) {
       auto &attr = cases[i];
-      if (attr.isa<fir::PointIntervalAttr>() ||
-          attr.isa<fir::LowerBoundAttr>() ||
-          attr.isa<fir::UpperBoundAttr>() ||
-          attr.isa<fir::ClosedIntervalAttr>() ||
-          attr.isa<mlir::UnitAttr>()) {
-        // ok
-      } else {
+      if (!(attr.isa<fir::PointIntervalAttr>() ||
+            attr.isa<fir::LowerBoundAttr>() ||
+            attr.isa<fir::UpperBoundAttr>() ||
+            attr.isa<fir::ClosedIntervalAttr>() ||
+            attr.isa<mlir::UnitAttr>()))
         return emitOpError("incorrect select case attribute type");
-      }
     }
     return mlir::success();
   }];
 
-  let extraClassDeclaration = extraSwitchClassDeclaration;
+  let extraClassDeclaration = extraSwitchClassDeclaration#[{
+    unsigned compareOffsetSize();
+  }];
 }
 
 def fir_SelectTypeOp : fir_SwitchTerminatorOp<"select_type"> {
@@ -830,6 +915,39 @@ def fir_SelectTypeOp : fir_SwitchTerminatorOp<"select_type"> {
           unit, ^bb5]
     ```
   }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, Value selector,"
+    "ArrayRef<mlir::Attribute> typeOperands,"
+    "ArrayRef<Block *> destinations, ArrayRef<ValueRange> destOperands = {},"
+    "ArrayRef<NamedAttribute> attributes = {}",
+    [{
+      result.addOperands(selector);
+      result.addAttribute(getCasesAttr(), builder->getArrayAttr(typeOperands));
+      const auto count = destinations.size();
+      for (auto d : destinations)
+        result.addSuccessors(d);
+      const auto opCount = destOperands.size();
+      llvm::SmallVector<int32_t, 8> argOffs;
+      int32_t sumArgs = 0;
+      for (std::remove_const_t<decltype(count)> i = 0; i != count; ++i) {
+        if (i < opCount) {
+          result.addOperands(destOperands[i]);
+          const auto argSz = destOperands[i].size();
+          argOffs.push_back(argSz);
+          sumArgs += argSz;
+        } else {
+          argOffs.push_back(0);
+        }
+      }
+      result.addAttribute(getOperandSegmentSizeAttr(),
+                          builder->getI32VectorAttr({1, 0, sumArgs}));
+      result.addAttribute(getTargetOffsetAttr(),
+                          builder->getI32VectorAttr(argOffs));
+      result.addAttributes(attributes);
+    }]
+  >];
 
   let parser = "return parseSelectType(parser, result);";
 
@@ -854,15 +972,18 @@ def fir_SelectTypeOp : fir_SwitchTerminatorOp<"select_type"> {
     if (!(getSelector().getType().isa<fir::BoxType>()))
       return emitOpError("must be a boxed type");
     auto cases = getAttrOfType<mlir::ArrayAttr>(getCasesAttr()).getValue();
-    auto count = getNumConditions();
+    auto count = getNumDest();
+    if (count == 0)
+      return emitOpError("must have at least one successor");
+    if (getNumConditions() != count)
+      return emitOpError("number of conditions and successors don't match");
+    if (targetOffsetSize() != count)
+      return emitOpError("incorrect number of successor operand groups");
     for (decltype(count) i = 0; i != count; ++i) {
       auto &attr = cases[i];
-      if (attr.isa<fir::ExactTypeAttr>() || attr.isa<fir::SubclassAttr>() ||
-          attr.isa<mlir::UnitAttr>()) {
-        // ok
-      } else {
+      if (!(attr.isa<fir::ExactTypeAttr>() || attr.isa<fir::SubclassAttr>() ||
+            attr.isa<mlir::UnitAttr>()))
         return emitOpError("invalid type-case alternative");
-      }
     }
     return mlir::success();
   }];
@@ -1745,46 +1866,73 @@ def fir_LoopOp : fir_Op<"loop", [ImplicitFirTerminator]> {
   }];
 
   let arguments = (ins
-    Index:$lowerBound,
-    Index:$upperBound,
-    Variadic<Index>:$optStep,
+    Variadic<Index>:$indexArgs,
     OptionalAttr<I64Attr>:$constantStep,
+    OptionalAttr<I64Attr>:$constantLowerBound,
+    OptionalAttr<I64Attr>:$constantUpperBound,
     OptionalAttr<UnitAttr>:$unordered
   );
 
-  let results = (outs Variadic<Index>:$lastVal);
+  let results = (outs);
 
   let regions = (region SizedRegion<1>:$region);
 
   let skipDefaultBuilders = 1;
   let builders = [
     OpBuilder<"mlir::Builder *builder, OperationState &result,"
+              "int64_t lowerBound, int64_t upperBound, int64_t step = 1,"
+              "bool unordered = false,"
+              "ArrayRef<NamedAttribute> attributes = {}">,
+    OpBuilder<"mlir::Builder *builder, OperationState &result,"
               "mlir::Value lowerBound, mlir::Value upperBound,"
-              "ValueRange step = {}, ArrayRef<NamedAttribute> attributes = {}">
+              "mlir::Value step, bool unordered = false,"
+              "ArrayRef<NamedAttribute> attributes = {}">,
+    OpBuilder<"mlir::Builder *builder, OperationState &result,"
+              "mlir::Value lowerBound, mlir::Value upperBound,"
+              "bool unordered = false,"
+              "ArrayRef<NamedAttribute> attributes = {}">,
+    OpBuilder<"mlir::Builder *builder, OperationState &result,"
+              "mlir::Value lowerBound, mlir::Value upperBound,"
+              "int64_t step, bool unordered = false,"
+              "ArrayRef<NamedAttribute> attributes = {}">
   ];
 
   let parser = "return parseLoopOp(parser, result);";
 
   let printer = [{
-    p << getOperationName() << ' ' << getInductionVar() << " = "
-      << lowerBound() << " to " << upperBound();
-    auto s = optStep();
-    if (s.begin() != s.end()) {
-      p << " step ";
-      p.printOperand(*s.begin());
+    p << getOperationName() << ' ' << getInductionVar() << " = ";
+    if (constantLowerBound())
+      p << "(" << *constantLowerBound() << ")";
+    else
+      p.printOperand(getLowerBoundOperand());
+    p << " to ";
+    if (constantUpperBound())
+      p << "(" << *constantUpperBound() << ")";
+    else
+      p.printOperand(getUpperBoundOperand());
+    if (constantStep()) {
+      p << " step (" << *constantStep() << ")";
+    } else {
+      if (indexArgs().size() > 2) {
+        p << " step ";
+        p.printOperand(getStepOperand());
+      }
     }
     if (unordered())
       p << " unordered";
     p.printRegion(region(), /*printEntryBlockArgs=*/false,
                             /*printBlockTerminators=*/false);
-    p.printOptionalAttrDict(getAttrs(), {unorderedAttrName(), stepAttrName()});
+    p.printOptionalAttrDict(getAttrs(), {unorderedAttrName(), stepAttrName(),
+                            lowerAttrName(), upperAttrName()});
   }];
 
   let verifier = [{
-    auto step = optStep();
-    if (step.begin() != step.end()) {
+    const auto argSize = indexArgs().size();
+    if (!((argSize == 0) || (argSize == 2) || (argSize == 3)))
+      return emitOpError("wrong number of ssa arguments");
+    if (argSize > 2) {
       // FIXME: size of step must be 1
-      auto *s = (*step.begin()).getDefiningOp();
+      auto *s = (*(indexArgs().begin() + 2)).getDefiningOp();
       if (auto cst = dyn_cast_or_null<mlir::ConstantIndexOp>(s))
         if (cst.getValue() == 0)
           return emitOpError("constant step operand must be nonzero");
@@ -1797,20 +1945,18 @@ def fir_LoopOp : fir_Op<"loop", [ImplicitFirTerminator]> {
         !body->getArgument(0).getType().isIndex())
       return emitOpError("expected body to have a single index argument for "
                          "the induction variable");
-    if (lastVal().size() > 1)
-      return emitOpError("can only return one final value of iterator");
     return mlir::success();
   }];
 
   let extraClassDeclaration = [{
-    static constexpr const char *unorderedAttrName() { return "unordered"; }
-    static constexpr const char *stepAttrName() { return "step"; }
-
-    /// Is this an unordered loop?
-    bool isUnordered() { return getAttr(unorderedAttrName()).isa<UnitAttr>(); }
-
-    /// Does loop set (and return) the final value of the control variable?
-    bool hasLastValue() { return lastVal().size(); }
+    static constexpr llvm::StringRef unorderedAttrName() { return "unordered"; }
+    static constexpr llvm::StringRef stepAttrName() { return "constantStep"; }
+    static constexpr llvm::StringRef upperAttrName() {
+      return "constantUpperBound";
+    }
+    static constexpr llvm::StringRef lowerAttrName() {
+      return "constantLowerBound";
+    }
 
     /// Get the body of the loop
     mlir::Block *getBody() { return &region().front(); }
@@ -1818,21 +1964,27 @@ def fir_LoopOp : fir_Op<"loop", [ImplicitFirTerminator]> {
     /// Get the block argument corresponding to the loop control value (PHI)
     mlir::Value getInductionVar() { return getBody()->getArgument(0); }
 
-    /// Get a builder to insert operations into the LoopOp
-    mlir::OpBuilder getBodyBuilder() {
-      return mlir::OpBuilder(getBody(), std::prev(getBody()->end()));
+    mlir::Value getLowerBoundOperand() {
+      if (indexArgs().size() != 0)
+        return *indexArgs().begin();
+      return {};
+    }
+    
+    mlir::Value getUpperBoundOperand() {
+      if (indexArgs().size() != 0)
+        return *(indexArgs().begin() + 1);
+      return {};
     }
 
-    void setLowerBound(mlir::Value bound) {
-      getOperation()->setOperand(0, bound);
+    mlir::Value getStepOperand() {
+      if (indexArgs().size() == 3)
+        return *(indexArgs().begin() + 2);
+      return {};
     }
 
-    void setUpperBound(mlir::Value bound) {
-      getOperation()->setOperand(1, bound);
-    }
-
-    void setStep(mlir::Value step) {
-      getOperation()->setOperand(2, step);
+    void setUnordered() {
+      getOperation()->setAttr(unorderedAttrName(),
+                              mlir::UnitAttr::get(getContext()));
     }
   }];
 }
@@ -1873,7 +2025,8 @@ def fir_WhereOp : fir_Op<"where", [ImplicitFirTerminator]> {
 
     // Print the 'else' regions if it exists and has a block.
     auto &otherReg = otherRegion();
-    if (!otherReg.empty()) {
+    if (!otherReg.empty() && !otherReg.front().empty() &&
+        otherReg.front().front().isKnownNonTerminator()) {
       p << " otherwise";
       p.printRegion(otherReg, /*printEntryBlockArgs=*/false,
           /*printBlockTerminators=*/false);
@@ -2454,8 +2607,8 @@ def fir_GlobalOp : fir_Op<"global", [IsolatedFromAbove, Symbol]> {
         %z = constant 0 : index
         %o = constant 1 : index
         %4 = fir.insert_value %3, %1, %z : (tuple<i32, f32>, i32, index) -> tuple<i32, f32>
-        %5 = fir.insert_value %4, %1, %o : (tuple<i32, f32>, f32, index) -> tuple<i32, f32>
-        return %5
+        %5 = fir.insert_value %4, %2, %o : (tuple<i32, f32>, f32, index) -> tuple<i32, f32>
+        fir.has_value %5
       }
     ```
   }];
@@ -2483,7 +2636,7 @@ def fir_GlobalOp : fir_Op<"global", [IsolatedFromAbove, Symbol]> {
     result.attributes.back().second = builder.getStringAttr(name);
 
     bool simpleInitializer = false;
-    if (!parser.parseOptionalLParen()) {
+    if (mlir::succeeded(parser.parseOptionalLParen())) {
       Attribute attr;
       if (parser.parseAttribute(attr, initValAttrName(), result.attributes) ||
           parser.parseRParen())
