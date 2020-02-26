@@ -15,9 +15,12 @@
 #include "flang/common/default-kinds.h"
 #include "flang/lower/Bridge.h"
 #include "flang/lower/ConvertExpr.h"
+#include "flang/optimizer/CodeGen/CodeGen.h"
 #include "flang/optimizer/Dialect/FIRDialect.h"
 #include "flang/optimizer/Support/InternalNames.h"
 #include "flang/optimizer/Support/KindMapping.h"
+#include "flang/optimizer/Transforms/Passes.h"
+#include "flang/optimizer/Transforms/StdConverter.h"
 #include "flang/parser/characters.h"
 #include "flang/parser/dump-parse-tree.h"
 #include "flang/parser/message.h"
@@ -67,6 +70,10 @@ llvm::cl::opt<std::string>
     moduleSuffix("module-suffix", llvm::cl::desc("module file suffix override"),
                  llvm::cl::init(".mod"));
 
+llvm::cl::opt<bool>
+    emitLLVM("emit-llvm",
+             llvm::cl::desc("Add passes to lower to and emit LLVM IR"),
+             llvm::cl::init(false));
 llvm::cl::opt<bool>
     emitFIR("emit-fir",
             llvm::cl::desc("Dump the FIR created by lowering and exit"),
@@ -151,6 +158,23 @@ void convertFortranSourceToMLIR(
   }
 
   mlir::PassManager pm = mlirModule.getContext();
+  pm.addPass(fir::createMemToRegPass());
+  pm.addPass(fir::createCSEPass());
+  pm.addPass(fir::createLowerToLoopPass());
+  pm.addPass(fir::createFIRToStdPass(kindMap));
+  pm.addPass(mlir::createLowerToCFGPass());
+
+  if (emitLLVM) {
+    pm.addPass(fir::createFIRToLLVMPass(nameUniquer));
+    std::error_code ec;
+    llvm::ToolOutputFile out(outputFilename + ".ll", ec,
+                             llvm::sys::fs::OF_None);
+    if (ec) {
+      llvm::errs() << "can't open output file " + outputFilename + ".ll";
+      return;
+    }
+    pm.addPass(fir::createLLVMDialectToLLVMPass(out.os()));
+  }
 
   if (mlir::succeeded(pm.run(mlirModule))) {
     mlirModule.print(out);

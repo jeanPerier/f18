@@ -11,9 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "flang/optimizer/CodeGen/CodeGen.h"
 #include "flang/optimizer/Dialect/FIRDialect.h"
 #include "flang/optimizer/Support/InternalNames.h"
 #include "flang/optimizer/Support/KindMapping.h"
+#include "flang/optimizer/Transforms/Passes.h"
+#include "flang/optimizer/Transforms/StdConverter.h"
+#include "mlir/Conversion/LoopToStandard/ConvertLoopToStandard.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Module.h"
 #include "mlir/InitAllDialects.h"
@@ -91,6 +95,17 @@ int compileFIR() {
   } else {
     // add all the passes
     // the user can disable them individually
+    pm.addPass(fir::createMemToRegPass());
+    pm.addPass(fir::createCSEPass());
+    // convert fir dialect to affine
+    pm.addPass(fir::createPromoteToAffinePass());
+    // convert fir dialect to loop
+    pm.addPass(fir::createLowerToLoopPass());
+    pm.addPass(fir::createFIRToStdPass(kindMap));
+    // convert loop dialect to standard
+    pm.addPass(mlir::createLowerToCFGPass());
+    pm.addPass(fir::createFIRToLLVMPass(uniquer));
+    pm.addPass(fir::createLLVMDialectToLLVMPass(out.os()));
   }
 
   // run the pass manager
