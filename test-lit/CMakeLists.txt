@@ -31,6 +31,7 @@ set(FLANG_TEST_DEPENDS
   FileCheck
   count
   not
+  tco
 )
 
 add_lit_testsuite(check-flang "Running the Flang regression tests"
