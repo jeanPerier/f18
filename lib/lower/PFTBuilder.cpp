@@ -1,4 +1,4 @@
-//===-- lib/lower/PFTBuilder.cc -------------------------------------------===//
+//===-- PFTBuilder.cc -----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -17,8 +17,8 @@
 namespace Fortran::lower {
 namespace {
 
-/// Helpers to unveil parser node inside parser::Statement<>,
-/// parser::UnlabeledStatement, and common::Indirection<>
+/// Helpers to unveil parser node inside Fortran::parser::Statement<>,
+/// Fortran::parser::UnlabeledStatement, and Fortran::common::Indirection<>
 template <typename A>
 struct RemoveIndirectionHelper {
   using Type = A;
@@ -689,9 +689,10 @@ void annotateControl(pft::Program &pft) {
   }
 }
 
-/// Dump a PFT.
 void dumpPFT(llvm::raw_ostream &outputStream, pft::Program &pft) {
   PFTDumper{}.dumpPFT(outputStream, pft);
 }
+
+void pft::Program::dump() { dumpPFT(llvm::errs(), *this); }
 
 } // namespace Fortran::lower
