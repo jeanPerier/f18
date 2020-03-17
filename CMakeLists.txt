@@ -372,21 +372,14 @@ add_subdirectory(cmake/modules)
 
 option(FLANG_BUILD_TOOLS
   "Build the Flang tools. If OFF, just generate build targets." ON)
-if (FLANG_BUILD_TOOLS)
-  add_subdirectory(tools)
-endif()
 add_subdirectory(runtime)
 
 option(FLANG_INCLUDE_TESTS
        "Generate build targets for the Flang unit tests."
-       ${LLVM_INCLUDE_TESTS})
+       ON)
 
-add_subdirectory(include)
-add_subdirectory(lib)
 add_subdirectory(unittests)
-add_subdirectory(test)
 add_subdirectory(tools)
-add_subdirectory(runtime)
 
 option(FLANG_INCLUDE_DOCS "Generate build targets for the Flang docs."
   ${LLVM_INCLUDE_DOCS})
@@ -397,9 +390,7 @@ endif()
 if (FLANG_INCLUDE_TESTS)
   enable_testing()
   add_subdirectory(test)
-  add_subdirectory(test-lit)
 endif()
-add_subdirectory(test-lit)
 
 # Custom target to install Flang libraries.
 add_custom_target(flang-libraries)
