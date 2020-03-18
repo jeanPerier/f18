@@ -3,6 +3,10 @@
 
 set(FLANG_INTRINSIC_MODULES_DIR ${FLANG_BINARY_DIR}/tools/f18/include)
 
+set(FLANG_TOOLS_DIR ${FLANG_BINARY_DIR}/tools/f18/bin)
+
+set(FLANG_LLVM_TOOLS_DIR ${FLANG_BINARY_DIR}/bin)
+
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -15,11 +19,13 @@ set(FLANG_TEST_PARAMS
 
 set(FLANG_TEST_DEPENDS
   f18
+  #llvm-lit -- FIXME causes cmake to whine. why?
+  FileCheck
+  count
+  not
+  bbc
+  tco
 )
-
-if (LINK_WITH_FIR)
-  list(APPEND FLANG_TEST_DEPENDS tco)
-endif()
 
 add_lit_testsuite(check-flang "Running the Flang regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
