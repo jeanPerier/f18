@@ -1,7 +1,7 @@
 # Test runner infrastructure for Flang. This configures the Flang test trees
 # for use by Lit, and delegates to LLVM's lit test handlers.
 
-set(FLANG_INTRINSIC_MODULES_DIR ${FLANG_BINARY_DIR}/tools/f18/include)
+set(FLANG_INTRINSIC_MODULES_DIR ${FLANG_BINARY_DIR}/include/flang)
 
 set(FLANG_TOOLS_DIR ${FLANG_BINARY_DIR}/tools/f18/bin)
 
