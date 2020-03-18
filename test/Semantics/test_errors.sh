@@ -12,7 +12,7 @@ actual=$temp/actual
 expect=$temp/expect
 diffs=$temp/diffs
 
-include=$(dirname $(dirname $F18))/include
+include=$(dirname $(dirname $F18))/../../include/flang
 cmd="$F18 $F18_OPTIONS $USER_OPTIONS -I$include $src"
 ( cd $temp; $cmd ) > $log 2>&1
 if [[ $? -ge 128 ]]; then

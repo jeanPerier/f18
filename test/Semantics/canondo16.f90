@@ -5,7 +5,7 @@
 ! By default, this is not an error and label do are rewritten to non-label do.
 ! A warning is generated with -Mstandard
 
-! EXEC: ${F18} -funparse-with-symbols -Mstandard -I../../tools/f18/include %s 2>&1 | ${FileCheck} %s
+! EXEC: ${F18} -funparse-with-symbols -Mstandard -I../../include/flang %s 2>&1 | ${FileCheck} %s
 
 ! CHECK: end do
 
