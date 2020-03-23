@@ -889,6 +889,34 @@ pft::ModuleLikeUnit::ModuleStatement getModuleStmt(const T &mod) {
       &std::get<parser::Statement<A>>(mod.t)};
 }
 
+const semantics::Symbol *
+getSymbol(std::optional<pft::FunctionLikeUnit::FunctionStatement> &beginStmt) {
+  if (!beginStmt)
+    return nullptr;
+
+  const auto *symbol = std::visit(
+      common::visitors{
+          [](const parser::Statement<parser::ProgramStmt> *stmt)
+              -> const semantics::Symbol * { return stmt->statement.v.symbol; },
+          [](const parser::Statement<parser::FunctionStmt> *stmt)
+              -> const semantics::Symbol * {
+            return std::get<parser::Name>(stmt->statement.t).symbol;
+          },
+          [](const parser::Statement<parser::SubroutineStmt> *stmt)
+              -> const semantics::Symbol * {
+            return std::get<parser::Name>(stmt->statement.t).symbol;
+          },
+          [](const parser::Statement<parser::MpSubprogramStmt> *stmt)
+              -> const semantics::Symbol * { return stmt->statement.v.symbol; },
+          [](const auto *) -> const semantics::Symbol * {
+            assert(false && "unknown FunctionLike beginStmt");
+            return nullptr;
+          }},
+      *beginStmt);
+  assert(symbol && "parser::Name must have resolved symbol");
+  return symbol;
+}
+
 } // namespace
 
 llvm::cl::opt<bool> clDisableStructuredFir(
@@ -903,6 +931,18 @@ bool pft::Evaluation::lowerAsUnstructured() const {
   return isUnstructured || clDisableStructuredFir;
 }
 
+pft::FunctionLikeUnit *pft::Evaluation::getOwningProcedure() const {
+  return std::visit(
+      Fortran::common::visitors{
+          [](Fortran::lower::pft::FunctionLikeUnit *c) { return c; },
+          [&](Fortran::lower::pft::Evaluation *c) {
+            return c->getOwningProcedure();
+          },
+          [](auto *) -> pft::FunctionLikeUnit * { return nullptr; },
+      },
+      parentVariant.p);
+}
+
 pft::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
                                         const pft::ParentVariant &parent)
     : ProgramUnit{func, parent} {
@@ -911,6 +951,7 @@ pft::FunctionLikeUnit::FunctionLikeUnit(const parser::MainProgram &func,
   if (ps.has_value()) {
     const parser::Statement<parser::ProgramStmt> &statement{ps.value()};
     beginStmt = &statement;
+    symbol = getSymbol(beginStmt);
   }
   endStmt = getFunctionStmt<parser::EndProgramStmt>(func);
 }
@@ -919,20 +960,24 @@ pft::FunctionLikeUnit::FunctionLikeUnit(const parser::FunctionSubprogram &func,
                                         const pft::ParentVariant &parent)
     : ProgramUnit{func, parent},
       beginStmt{getFunctionStmt<parser::FunctionStmt>(func)},
-      endStmt{getFunctionStmt<parser::EndFunctionStmt>(func)} {}
+      endStmt{getFunctionStmt<parser::EndFunctionStmt>(func)}, symbol{getSymbol(
+                                                                   beginStmt)} {
+}
 
 pft::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SubroutineSubprogram &func, const pft::ParentVariant &parent)
     : ProgramUnit{func, parent},
       beginStmt{getFunctionStmt<parser::SubroutineStmt>(func)},
-      endStmt{getFunctionStmt<parser::EndSubroutineStmt>(func)} {}
+      endStmt{getFunctionStmt<parser::EndSubroutineStmt>(func)},
+      symbol{getSymbol(beginStmt)} {}
 
 pft::FunctionLikeUnit::FunctionLikeUnit(
     const parser::SeparateModuleSubprogram &func,
     const pft::ParentVariant &parent)
     : ProgramUnit{func, parent},
       beginStmt{getFunctionStmt<parser::MpSubprogramStmt>(func)},
-      endStmt{getFunctionStmt<parser::EndMpSubprogramStmt>(func)} {}
+      endStmt{getFunctionStmt<parser::EndMpSubprogramStmt>(func)},
+      symbol{getSymbol(beginStmt)} {}
 
 pft::ModuleLikeUnit::ModuleLikeUnit(const parser::Module &m,
                                     const pft::ParentVariant &parent)
