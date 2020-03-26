@@ -1146,6 +1146,71 @@ private:
         Fortran::common::visitors{[](const auto &x) { return x.source; }});
   }
 
+  // Push to localSymbol when ready
+  void instantiateLocalVariable(
+      const Fortran::semantics::Symbol &symbol,
+      Fortran::lower::SymMap &dummyArgs,
+      llvm::DenseSet<Fortran::semantics::SymbolRef> attempted) {
+    llvm::errs() << "instantiate: " << symbol << "\n";
+    if (localSymbols.lookupSymbol(symbol))
+      return; // already instantiated
+
+    if (IsProcedure(symbol))
+      return;
+
+    if (symbol.has<Fortran::semantics::UseDetails>() ||
+        symbol.has<Fortran::semantics::HostAssocDetails>())
+      TODO(); // Need to keep the localSymbols of other units ?
+
+    if (attempted.find(symbol) != attempted.end())
+      TODO(); // Complex dependencies in specification expressions.
+
+    llvm::errs() << "actually instantiating \n";
+
+    attempted.insert(symbol);
+    mlir::Value localValue;
+    auto *type{symbol.GetType()};
+    assert(type && "expected type for local symbol");
+
+    if (type->category() == Fortran::semantics::DeclTypeSpec::Character) {
+      const auto &lenghtParam{type->characterTypeSpec().length()};
+      if (auto expr{lenghtParam.GetExplicit()}) {
+        for (const auto &requiredSymbol :
+             Fortran::evaluate::CollectSymbols(*expr)) {
+          instantiateLocalVariable(requiredSymbol, dummyArgs, attempted);
+        }
+        // Fortran::lower::CharacterOpsBuilder charBuilder{*builder,
+        // toLocation()};
+        auto lenValue =
+            genExprValue(Fortran::evaluate::AsGenericExpr(std::move(*expr)));
+        if (auto actual = dummyArgs.lookupSymbol(symbol)) {
+          // addr = charBuilder.createUnbox(actual);
+          // localValue = charBuilder.createEmbox(unboxed.first, lenValue);
+        } else {
+          // TODO: propagate symbol name to FIR.
+          // localValue = charBuilder.createTemp(genType(symbol), lenValue);
+        }
+      } else if (lenghtParam.isDeferred()) {
+        TODO();
+      } else {
+        // Assumed
+        localValue = dummyArgs.lookupSymbol(symbol);
+        assert(localValue &&
+               "expected dummy arguments when length not explicit");
+      }
+      localSymbols.addSymbol(symbol, localValue);
+    } else if (!type->AsIntrinsic()) {
+      TODO(); // Derived type / polymorphic
+    } else {
+      if (auto actualValue = dummyArgs.lookupSymbol(symbol))
+        localSymbols.addSymbol(symbol, actualValue);
+      else
+        createTemporary(toLocation(), symbol);
+    }
+    // TODO: bounds, initial value
+    attempted.erase(symbol);
+  }
+
   /// Prepare to translate a new function
   void startNewFunction(Fortran::lower::pft::FunctionLikeUnit &funit) {
     assert(!builder && "expected nullptr");
@@ -1168,6 +1233,7 @@ private:
     func.addEntryBlock();
     builder->setInsertionPointToStart(&func.front());
 
+    Fortran::lower::SymMap dummyAssociations;
     // plumb function's arguments
     if (funit.symbol && !funit.isMainProgram()) {
       auto *entryBlock = &func.front();
@@ -1176,13 +1242,22 @@ private:
       for (const auto &v :
            llvm::zip(details.dummyArgs(), entryBlock->getArguments())) {
         if (std::get<0>(v)) {
-          localSymbols.addSymbol(*std::get<0>(v), std::get<1>(v));
+          dummyAssociations.addSymbol(*std::get<0>(v), std::get<1>(v));
         } else {
           TODO(); // handle alternate return
         }
       }
-      if (details.isFunction())
-        createTemporary(toLocation(), details.result());
+
+      // Go through the symbol scope and evaluate specification expressions
+      llvm::DenseSet<Fortran::semantics::SymbolRef> attempted;
+      assert(funit.symbol->scope() && "subprogram symbol must have a scope");
+      for (const auto &iter : *funit.symbol->scope()) {
+        instantiateLocalVariable(iter.second.get(), dummyAssociations,
+                                 attempted);
+      }
+
+      // if (details.isFunction())
+      //  createTemporary(toLocation(), details.result());
     }
 
     // Create most function blocks in advance.
